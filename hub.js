@@ -932,6 +932,20 @@ async function handleHubModal(interaction, client) {
         }
 
 
+        if (id === 'tufc_modal_member_delete') {
+            const ign = interaction.fields.getTextInputValue('ign').trim();
+            if (!ign) return interaction.reply({ flags: 64, content: '❌ Member IGN cannot be empty.' });
+
+            await interaction.deferReply({ flags: 64 });
+            const r = await deleteMember(ign);
+
+            if (!r.success && r.reason === 'MEMBER_NOT_FOUND') {
+                return interaction.editReply(`❌ **${ign}** was not found in Google Sheets.`);
+            }
+
+            return interaction.editReply(`🗑️ **${ign}** was permanently removed from Google Sheets — row ${r.row} deleted.`);
+        }
+
         if (id.startsWith('tufc_modal_member_change_sheet:')) {
             const oldIgn = decodeURIComponent(id.slice('tufc_modal_member_change_sheet:'.length));
             const newIgn = interaction.fields.getTextInputValue('new_ign').trim();

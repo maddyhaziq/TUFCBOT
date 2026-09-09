@@ -251,15 +251,37 @@ async function deleteMember(ign) {
     );
     if (memberRowIndex === -1) return { success: false, reason: 'MEMBER_NOT_FOUND' };
 
+    // getMembers() reads B4:O, so memberRowIndex 1 is spreadsheet row 5.
     const sheetRow = DATA_START_ROW + memberRowIndex - 1;
-    await sheets.spreadsheets.values.clear({
+
+    // Delete the actual spreadsheet row instead of only clearing B:O.
+    const metadata = await sheets.spreadsheets.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `'${SHEET_NAME}'!B${sheetRow}:O${sheetRow}`,
+        fields: 'sheets.properties',
+    });
+    const sheet = (metadata.data.sheets || []).find(
+        item => item.properties && item.properties.title === SHEET_NAME
+    );
+    if (!sheet) throw new Error(`Google Sheet tab "${SHEET_NAME}" could not be found.`);
+
+    await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: {
+            requests: [{
+                deleteDimension: {
+                    range: {
+                        sheetId: sheet.properties.sheetId,
+                        dimension: 'ROWS',
+                        startIndex: sheetRow - 1,
+                        endIndex: sheetRow,
+                    },
+                },
+            }],
+        },
     });
 
-    return { success: true, ign, row: sheetRow };
+    return { success: true, ign: String(ign).trim(), row: sheetRow };
 }
-
 async function markGoldPassNotified(sheetRow) {
     const rows = await getMembers();
     const headers = rows[0] || [];
