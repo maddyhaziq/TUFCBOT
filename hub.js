@@ -21,6 +21,7 @@ const {
     addMember,
     deleteMember,
     updateMemberRole,
+    updateMemberDiscordId,
     updateMemberStats,
 } = require('./googlesheets');
 const { PARTY_INFO, parseDuration, formatDuration, listTimers, createTimer } = require('./timers');
@@ -316,6 +317,7 @@ function buildHubRows() {
     );
     const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('tufc_hub_dorm_upgrade').setLabel('New Dorm Tower Upgrade Calculator').setEmoji('🏢').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('tufc_hub_link_discord').setLabel('Link Discord').setEmoji('🔗').setStyle(ButtonStyle.Secondary),
     );
     return [row1, row2, row3];
 }
@@ -437,6 +439,11 @@ async function handleHubButton(interaction, client) {
     if (id === 'tufc_admin_discord_role') {
         if (!(await isAdmin(interaction))) return interaction.reply({ content: '❌ Only authorized management roles can use this tool.', ephemeral: true });
         return interaction.reply({ flags: 64, content: '👤 Select the specific Discord member whose Discord role you want to change.', components: [new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId('tufc_admin_discord_role_select').setPlaceholder('Select Discord member').setMinValues(1).setMaxValues(1))] });
+    }
+    if (id === 'tufc_hub_link_discord') {
+        return interaction.showModal(modal('tufc_modal_link_discord', 'Link Discord', [
+            { id: 'ign', label: 'Your TUFC IGN', placeholder: 'Enter your exact IGN from Google Sheets', required: true },
+        ]));
     }
     if (id === 'tufc_member_role') {
         if (!(await isAdmin(interaction))) return interaction.reply({ content: '❌ Only authorized management roles can change member roles.', flags: 64 });
@@ -894,63 +901,39 @@ async function handleHubModal(interaction, client) {
         const member = await lookupMember(interaction.fields.getTextInputValue('ign'));
         return interaction.reply({ flags: 64, embeds: [member ? goldPassEmbed(member) : new EmbedBuilder().setTitle('💳 Gold Pass').setDescription('❌ Member not found.')] });
     }
-if (id === 'tufc_modal_member_role_lookup') {
-    await interaction.deferReply({ flags: 64 });
 
-    try {
-        const ign = interaction.fields.getTextInputValue('ign').trim();
-        const sheetMember = await lookupMember(ign);
-
-        if (!sheetMember?.IGN) {
-            return interaction.editReply(`❌ **${ign}** could not be found in Google Sheets.`);
-        }
-
-        const rows = await getMembers();
-
-        const roleNames = [
-            ...new Set(
+    if (id === 'tufc_modal_member_role_lookup') {
+        await interaction.deferReply({ flags: 64 });
+        try {
+            const ign = interaction.fields.getTextInputValue('ign').trim();
+            const sheetMember = await lookupMember(ign);
+            if (!sheetMember?.IGN) {
+                return interaction.editReply(`❌ **${ign}** could not be found in Google Sheets.`);
+            }
+            const rows = await getMembers();
+            const roleNames = [...new Set(
                 findMemberRows(rows)
                     .map(m => String(m.ROLE || '').trim())
                     .filter(Boolean)
-            )
-        ].sort((a, b) => a.localeCompare(b));
-
-        if (!roleNames.length) {
-            return interaction.editReply('❌ No roles were found in the Google Sheets ROLE column.');
-        }
-
-        if (roleNames.length > 25) {
-            return interaction.editReply(
-                `❌ There are ${roleNames.length} Google Sheets roles. Discord menus support up to 25 choices.`
-            );
-        }
-
-        return interaction.editReply({
-            content: `👤 **${sheetMember.IGN}** selected from Google Sheets.\n🏷️ Choose the new Google Sheets role for this member.`,
-            components: [
-                new ActionRowBuilder().addComponents(
+            )].sort((a, b) => a.localeCompare(b));
+            if (!roleNames.length) return interaction.editReply('❌ No roles were found in the Google Sheets ROLE column.');
+            if (roleNames.length > 25) return interaction.editReply(`❌ There are ${roleNames.length} Google Sheets roles. Discord menus support up to 25 choices.`);
+            return interaction.editReply({
+                content: `👤 **${sheetMember.IGN}** selected from Google Sheets.\n🏷️ Choose the new Google Sheets role for this member.`,
+                components: [new ActionRowBuilder().addComponents(
                     new StringSelectMenuBuilder()
                         .setCustomId(`tufc_member_role_pick:${encodeURIComponent(sheetMember.IGN)}`)
                         .setPlaceholder('Select Google Sheets role')
                         .setMinValues(1)
                         .setMaxValues(1)
-                        .addOptions(
-                            roleNames.map(name => ({
-                                label: name.slice(0, 100),
-                                value: name.slice(0, 100)
-                            }))
-                        )
-                )
-            ]
-        });
-
-    } catch (error) {
-        console.error('[MEMBER ROLE LOOKUP] Failed:', error);
-        return interaction.editReply(
-            '❌ I could not look up that member. Check the Railway logs for details.'
-        );
+                        .addOptions(roleNames.map(name => ({ label: name.slice(0, 100), value: name.slice(0, 100) })))
+                )]
+            });
+        } catch (error) {
+            console.error('[MEMBER ROLE LOOKUP] Failed:', error);
+            return interaction.editReply('❌ I could not look up that member. Check the Railway logs for details.');
+        }
     }
-}
     // Delete Member must acknowledge the Discord modal before the role check.
     // The management-role lookup calls Discord and can occasionally exceed
     // Discord's 3-second interaction window.
@@ -972,6 +955,49 @@ if (id === 'tufc_modal_member_role_lookup') {
             console.error(`[DELETE MEMBER] Failed for IGN "${interaction.fields.getTextInputValue('ign').trim()}"`, error);
             const detail = error?.message ? String(error.message) : 'Unknown error';
             return interaction.editReply(`❌ I couldn't delete the member.\n\n**Reason:** ${detail.slice(0, 1500)}`);
+        }
+    }
+
+    if (id === 'tufc_modal_link_discord') {
+        await interaction.deferReply({ flags: 64 });
+        try {
+            const ign = interaction.fields.getTextInputValue('ign').trim();
+            if (!ign) return interaction.editReply('❌ IGN cannot be empty.');
+
+            const sheetMember = await lookupMember(ign);
+            if (!sheetMember?.IGN) {
+                return interaction.editReply(`❌ **${ign}** could not be found in Google Sheets.`);
+            }
+
+            const discordId = String(interaction.user.id);
+            const existingForIgn = String(sheetMember['DISCORD ID'] || '').trim();
+            if (existingForIgn && existingForIgn !== discordId) {
+                return interaction.editReply('❌ This IGN is already linked to a different Discord account. Please contact TUFC management if this needs to be changed.');
+            }
+
+            const rows = await getMembers();
+            const headers = rows[0] || [];
+            const ignIndex = headers.findIndex(h => String(h || '').trim().toLowerCase() === 'ign');
+            const discordIndex = headers.findIndex(h => ['discord id', 'discord user id', 'discord_id'].includes(String(h || '').trim().toLowerCase()));
+            if (ignIndex === -1 || discordIndex === -1) {
+                return interaction.editReply('❌ The Google Sheet is missing the **DISCORD ID** column. Please check the member sheet header.');
+            }
+
+            const alreadyLinkedElsewhere = rows.slice(1).some(row =>
+                String(row[discordIndex] || '').trim() === discordId &&
+                String(row[ignIndex] || '').trim().toLowerCase() !== String(sheetMember.IGN).trim().toLowerCase()
+            );
+            if (alreadyLinkedElsewhere) {
+                return interaction.editReply('❌ Your Discord account is already linked to a different TUFC IGN. Please contact TUFC management if your IGN has changed.');
+            }
+
+            const result = await updateMemberDiscordId(sheetMember.IGN, discordId);
+            if (!result.success) return interaction.editReply(`❌ **${ign}** could not be linked.`);
+            return interaction.editReply(`✅ **${sheetMember.IGN}** is now linked to your Discord account.\n🔗 Discord ID saved successfully.`);
+        } catch (error) {
+            console.error('[LINK DISCORD] Failed:', error);
+            const detail = error?.message ? String(error.message) : 'Unknown error';
+            return interaction.editReply(`❌ I couldn't link your Discord account.\n\n**Reason:** ${detail.slice(0, 1200)}`);
         }
     }
 
@@ -1098,4 +1124,3 @@ if (id === 'tufc_modal_member_role_lookup') {
 }
 
 module.exports = { buildHubEmbed, buildHubRows, buildHubPayload, handleHubButton, handleHubModal, handleHubSelectMenu, isManagementAuthorized };
-
