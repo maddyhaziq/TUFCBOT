@@ -441,8 +441,11 @@ async function handleHubButton(interaction, client) {
         return interaction.reply({ flags: 64, content: '👤 Select the specific Discord member whose Discord role you want to change.', components: [new ActionRowBuilder().addComponents(new UserSelectMenuBuilder().setCustomId('tufc_admin_discord_role_select').setPlaceholder('Select Discord member').setMinValues(1).setMaxValues(1))] });
     }
     if (id === 'tufc_hub_link_discord') {
-        return interaction.showModal(modal('tufc_modal_link_discord', 'Link Discord', [
-            { id: 'ign', label: 'Your TUFC IGN', placeholder: 'Enter your exact IGN from Google Sheets', required: true },
+        if (!(await isAdmin(interaction))) {
+            return interaction.reply({ content: '❌ Only authorized TUFC management roles can link Discord accounts.', flags: 64 });
+        }
+        return interaction.showModal(modal('tufc_modal_link_discord', 'Link Discord Member', [
+            { id: 'ign', label: 'Member IGN', placeholder: 'Enter the exact IGN from Google Sheets', required: true },
         ]));
     }
     if (id === 'tufc_member_role') {
@@ -854,6 +857,69 @@ try {
         return interaction.editReply({ content: `✅ **${sheetMember.IGN}** role changed from **${sheetMember.ROLE || '—'}** to **${next}**.\n📄 Google Sheets ROLE updated.\n${discordStatus}` });
     }
 
+    if (id.startsWith('tufc_link_discord_member:')) {
+        if (!(await isAdmin(interaction))) {
+            return interaction.reply({ content: '❌ Only authorized TUFC management roles can link Discord accounts.', flags: 64 });
+        }
+
+        const encodedIgn = id.slice('tufc_link_discord_member:'.length);
+        const ign = decodeURIComponent(encodedIgn);
+        const discordId = String(interaction.values[0] || '').trim();
+        if (!discordId) return interaction.reply({ flags: 64, content: '❌ No Discord member was selected.' });
+
+        await interaction.deferReply({ flags: 64 });
+        try {
+            const selectedMember = await interaction.guild.members.fetch(discordId).catch(() => null);
+            if (!selectedMember) {
+                return interaction.editReply('❌ I could not find that Discord member in this server.');
+            }
+            if (selectedMember.user.bot) {
+                return interaction.editReply('❌ Please select a real Discord member, not a bot account.');
+            }
+
+            const sheetMember = await lookupMember(ign);
+            if (!sheetMember?.IGN) {
+                return interaction.editReply(`❌ **${ign}** could not be found in Google Sheets. Please start the Link Discord process again.`);
+            }
+
+            const rows = await getMembers();
+            const headers = rows[0] || [];
+            const ignIndex = headers.findIndex(h => String(h || '').trim().toLowerCase() === 'ign');
+            const discordIndex = headers.findIndex(h => ['discord id', 'discord user id', 'discord_id'].includes(String(h || '').trim().toLowerCase()));
+            if (ignIndex === -1 || discordIndex === -1) {
+                return interaction.editReply('❌ The Google Sheet is missing the **DISCORD ID** column. Please check the member sheet header.');
+            }
+
+            const existingForIgn = String(sheetMember['DISCORD ID'] || '').trim();
+            if (existingForIgn && existingForIgn !== discordId) {
+                return interaction.editReply(`❌ **${sheetMember.IGN}** is already linked to <@${existingForIgn}>. Unlink the old account before assigning a different Discord member.`);
+            }
+
+            const alreadyLinkedElsewhere = rows.slice(1).some(row =>
+                String(row[discordIndex] || '').trim() === discordId &&
+                String(row[ignIndex] || '').trim().toLowerCase() !== String(sheetMember.IGN).trim().toLowerCase()
+            );
+            if (alreadyLinkedElsewhere) {
+                const linkedIgn = rows.slice(1).find(row =>
+                    String(row[discordIndex] || '').trim() === discordId
+                )?.[ignIndex];
+                return interaction.editReply(`❌ <@${discordId}> is already linked to **${linkedIgn || 'another TUFC IGN'}**. Each Discord account can only be linked to one TUFC member.`);
+            }
+
+            const result = await updateMemberDiscordId(sheetMember.IGN, discordId);
+            if (!result.success) return interaction.editReply(`❌ **${sheetMember.IGN}** could not be linked.`);
+
+            return interaction.editReply({
+                content: `✅ **${sheetMember.IGN}** is now linked to <@${discordId}>.\n🔗 Discord ID saved to Google Sheets.`,
+                components: []
+            });
+        } catch (error) {
+            console.error('[LINK DISCORD SELECT] Failed:', error);
+            const detail = error?.message ? String(error.message) : 'Unknown error';
+            return interaction.editReply(`❌ I couldn't complete the Discord link.\n\n**Reason:** ${detail.slice(0, 1200)}`);
+        }
+    }
+
     if (id === 'tufc_admin_discord_role_select') {
         if (!(await isAdmin(interaction))) return interaction.reply({ content: '❌ Only authorized management roles can use this tool.', flags: 64 });
         const uid = interaction.values[0];
@@ -959,20 +1025,19 @@ async function handleHubModal(interaction, client) {
     }
 
     if (id === 'tufc_modal_link_discord') {
+        // Linking is a management-only task. A normal member must never be able
+        // to choose their own Discord account for a TUFC member record.
         await interaction.deferReply({ flags: 64 });
+        if (!(await isAdmin(interaction))) {
+            return interaction.editReply('❌ Only authorized TUFC management roles can link Discord accounts.');
+        }
         try {
             const ign = interaction.fields.getTextInputValue('ign').trim();
-            if (!ign) return interaction.editReply('❌ IGN cannot be empty.');
+            if (!ign) return interaction.editReply('❌ Member IGN cannot be empty.');
 
             const sheetMember = await lookupMember(ign);
             if (!sheetMember?.IGN) {
                 return interaction.editReply(`❌ **${ign}** could not be found in Google Sheets.`);
-            }
-
-            const discordId = String(interaction.user.id);
-            const existingForIgn = String(sheetMember['DISCORD ID'] || '').trim();
-            if (existingForIgn && existingForIgn !== discordId) {
-                return interaction.editReply('❌ This IGN is already linked to a different Discord account. Please contact TUFC management if this needs to be changed.');
             }
 
             const rows = await getMembers();
@@ -983,21 +1048,27 @@ async function handleHubModal(interaction, client) {
                 return interaction.editReply('❌ The Google Sheet is missing the **DISCORD ID** column. Please check the member sheet header.');
             }
 
-            const alreadyLinkedElsewhere = rows.slice(1).some(row =>
-                String(row[discordIndex] || '').trim() === discordId &&
-                String(row[ignIndex] || '').trim().toLowerCase() !== String(sheetMember.IGN).trim().toLowerCase()
-            );
-            if (alreadyLinkedElsewhere) {
-                return interaction.editReply('❌ Your Discord account is already linked to a different TUFC IGN. Please contact TUFC management if your IGN has changed.');
-            }
+            const existingForIgn = String(sheetMember['DISCORD ID'] || '').trim();
+            const currentLinkedMember = existingForIgn ? await interaction.guild.members.fetch(existingForIgn).catch(() => null) : null;
+            const currentLinkedText = currentLinkedMember ? `\n🔗 Currently linked to: <@${existingForIgn}>` : (existingForIgn ? `\n🔗 Currently linked to Discord ID: \`${existingForIgn}\`` : '');
 
-            const result = await updateMemberDiscordId(sheetMember.IGN, discordId);
-            if (!result.success) return interaction.editReply(`❌ **${ign}** could not be linked.`);
-            return interaction.editReply(`✅ **${sheetMember.IGN}** is now linked to your Discord account.\n🔗 Discord ID saved successfully.`);
+            // Modals cannot contain a Discord UserSelectMenu, so the second step
+            // is a UserSelectMenu shown after the IGN has been validated.
+            const customId = `tufc_link_discord_member:${encodeURIComponent(sheetMember.IGN)}`;
+            return interaction.editReply({
+                content: `👤 **${sheetMember.IGN}** was found in Google Sheets.${currentLinkedText}\n\nSelect the actual Discord member to link to this TUFC member.`,
+                components: [new ActionRowBuilder().addComponents(
+                    new UserSelectMenuBuilder()
+                        .setCustomId(customId)
+                        .setPlaceholder('Select Discord member')
+                        .setMinValues(1)
+                        .setMaxValues(1)
+                )]
+            });
         } catch (error) {
-            console.error('[LINK DISCORD] Failed:', error);
+            console.error('[LINK DISCORD LOOKUP] Failed:', error);
             const detail = error?.message ? String(error.message) : 'Unknown error';
-            return interaction.editReply(`❌ I couldn't link your Discord account.\n\n**Reason:** ${detail.slice(0, 1200)}`);
+            return interaction.editReply(`❌ I couldn't prepare the Discord link.\n\n**Reason:** ${detail.slice(0, 1200)}`);
         }
     }
 
