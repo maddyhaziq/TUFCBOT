@@ -164,7 +164,6 @@ const rest = new REST({ version: '10' })
 client.once('clientReady', () => {
     console.log(`✅ ${client.user.tag} is online!`);
     startDashboard(client);
-    startHubAutoRefresh(client);
 });
 
 
@@ -255,8 +254,7 @@ client.on('interactionCreate', async interaction => {
                 });
             }
 
-            // Acknowledge immediately. Reuse the saved Hub message when possible;
-            // otherwise create the first Hub message and remember its channel/message ID.
+            // Keep one persistent Hub message instead of creating duplicates.
             await interaction.deferReply({ flags: 64 });
             const refreshed = await refreshSavedHub(client);
             if (refreshed) {
@@ -880,6 +878,7 @@ async function checkGoldPassExpiries() {
 }
 
 client.once('clientReady', async () => {
+    startHubAutoRefresh(client);
     console.log('🟡 Starting Gold Pass expiry checker...');
     await checkGoldPassExpiries();
     setInterval(checkGoldPassExpiries, GOLD_PASS_CHECK_INTERVAL);
