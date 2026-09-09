@@ -937,13 +937,19 @@ async function handleHubModal(interaction, client) {
             if (!ign) return interaction.reply({ flags: 64, content: '❌ Member IGN cannot be empty.' });
 
             await interaction.deferReply({ flags: 64 });
-            const r = await deleteMember(ign);
+            try {
+                const r = await deleteMember(ign);
 
-            if (!r.success && r.reason === 'MEMBER_NOT_FOUND') {
-                return interaction.editReply(`❌ **${ign}** was not found in Google Sheets.`);
+                if (!r.success && r.reason === 'MEMBER_NOT_FOUND') {
+                    return interaction.editReply(`❌ **${ign}** was not found in Google Sheets.`);
+                }
+
+                return interaction.editReply(`🗑️ **${ign}** was permanently removed from Google Sheets — row ${r.row} deleted.`);
+            } catch (error) {
+                console.error(`[DELETE MEMBER] Discord request failed for IGN "${ign}"`, error);
+                const detail = error?.message ? String(error.message) : 'Unknown error';
+                return interaction.editReply(`❌ I couldn't delete **${ign}**.\n\n**Reason:** ${detail.slice(0, 1500)}`);
             }
-
-            return interaction.editReply(`🗑️ **${ign}** was permanently removed from Google Sheets — row ${r.row} deleted.`);
         }
 
         if (id.startsWith('tufc_modal_member_change_sheet:')) {

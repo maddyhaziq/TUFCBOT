@@ -264,22 +264,33 @@ async function deleteMember(ign) {
     );
     if (!sheet) throw new Error(`Google Sheet tab "${SHEET_NAME}" could not be found.`);
 
-    await sheets.spreadsheets.batchUpdate({
-        spreadsheetId: SPREADSHEET_ID,
-        requestBody: {
-            requests: [{
-                deleteDimension: {
-                    range: {
-                        sheetId: sheet.properties.sheetId,
-                        dimension: 'ROWS',
-                        startIndex: sheetRow - 1,
-                        endIndex: sheetRow,
+    try {
+        await sheets.spreadsheets.batchUpdate({
+            spreadsheetId: SPREADSHEET_ID,
+            requestBody: {
+                requests: [{
+                    deleteDimension: {
+                        range: {
+                            sheetId: sheet.properties.sheetId,
+                            dimension: 'ROWS',
+                            startIndex: sheetRow - 1,
+                            endIndex: sheetRow,
+                        },
                     },
-                },
-            }],
-        },
-    });
+                }],
+            },
+        });
+    } catch (error) {
+        const status = error?.response?.status || error?.code || 'unknown';
+        const apiMessage = error?.response?.data?.error?.message || error?.message || String(error);
+        console.error(`[DELETE MEMBER] Failed deleting Google Sheets row ${sheetRow} for IGN "${ign}". status=${status}; message=${apiMessage}`);
+        if (error?.response?.data?.error?.errors) {
+            console.error('[DELETE MEMBER] Google API details:', JSON.stringify(error.response.data.error.errors));
+        }
+        throw new Error(`Google Sheets row deletion failed (${status}): ${apiMessage}`);
+    }
 
+    console.log(`[DELETE MEMBER] Successfully deleted row ${sheetRow} for IGN "${String(ign).trim()}" from sheet "${SHEET_NAME}".`);
     return { success: true, ign: String(ign).trim(), row: sheetRow };
 }
 async function markGoldPassNotified(sheetRow) {
