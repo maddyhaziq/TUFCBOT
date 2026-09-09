@@ -293,14 +293,91 @@ async function showLBHMenu(interaction) {
     ]});
 }
 
-function buildHubEmbed() {
+function normalizeHeader(value) {
+    return String(value || '').normalize('NFKC').replace(/\s+/gu, ' ').trim().toLowerCase();
+}
+
+function firstColumnValue(member, aliases) {
+    const wanted = new Set(aliases.map(normalizeHeader));
+    const key = Object.keys(member || {}).find(k => wanted.has(normalizeHeader(k)));
+    return key ? member[key] : '';
+}
+
+function isTruthySheetValue(value) {
+    const v = normalizeHeader(value);
+    return ['yes', 'true', '1', 'linked', 'active', 'member'].includes(v);
+}
+
+async function getHubStats() {
+    const rows = await getMembers();
+    const members = findMemberRows(rows).filter(m => String(m.IGN || '').trim());
+
+    const adminRoleNames = new Set([
+        'president',
+        'vice-president',
+        'vice president',
+        'the executive',
+        'the kicker',
+        'the party jockey',
+        'club admin',
+    ]);
+    const isAdminRole = role => adminRoleNames.has(normalizeHeader(role));
+
+    const admins = members.filter(m => isAdminRole(firstColumnValue(m, ['ROLE']))).length;
+    const perms = members.length;
+    const linked = members.filter(m => {
+        const id = firstColumnValue(m, ['DISCORD ID', 'DISCORD USER ID', 'DISCORD_ID']);
+        return String(id || '').trim() && !isTruthySheetValue(id);
+    }).length;
+
+    const guestCapacity = firstColumnValue(members[0], [
+        'GUEST CAPACITY', 'GUESTS', 'GUEST CAP', 'GUEST CAPACITY AVAILABLE'
+    ]);
+
+    const gpExpiring = members.filter(m => {
+        const end = parseDate(firstColumnValue(m, ['GP END DATE', 'GOLD PASS END DATE']));
+        if (!end) return false;
+        const now = new Date();
+        const days = (end.getTime() - now.getTime()) / 86400000;
+        return days >= 0 && days <= 7;
+    }).length;
+
+    const attention = [];
+    if (!guestCapacity) attention.push('Guest Capacity not found');
+    if (perms === 0) attention.push('No members found');
+    if (members.some(m => !String(firstColumnValue(m, ['ROLE']) || '').trim())) attention.push('Member role missing');
+    if (members.some(m => !String(firstColumnValue(m, ['DISCORD ID', 'DISCORD USER ID', 'DISCORD_ID']) || '').trim())) attention.push('Some Discord accounts are not linked');
+
+    return {
+        members, admins, perms, linked, guestCapacity, gpExpiring,
+        attention: attention.length ? attention : ['All core member data looks good'],
+    };
+}
+
+async function buildHubEmbed() {
     const state = loadState();
+    let stats;
+    try {
+        stats = await getHubStats();
+    } catch (error) {
+        console.error('[HUB] Failed to load Google Sheets stats:', error);
+        stats = { admins: 0, perms: 0, linked: 0, guestCapacity: '', gpExpiring: 0, attention: ['Google Sheets data could not be loaded'] };
+    }
+
+    const attentionText = stats.attention.map(item => `• ${item}`).join('\n');
+
     return new EmbedBuilder()
-        .setColor(0x5865F2)
+        .setColor(0x2b2d31)
         .setTitle('🦆 TUFCBOT • Member Hub')
         .setDescription('Your PIMD tools and club management in one place.\nUse the buttons below to open a tool.')
-        .addFields({ name: '🏹 Today\'s Parties', value: `**POTD:** ${state?.potd || 'Not found yet'}\n**PPOTD:** ${state?.ppotd || 'Not found yet'}` })
-        .setFooter({ text: 'TUFCBOT Member Hub • Party in my Dorm' });
+        .addFields(
+            { name: '🏹 Today\'s Parties', value: `**POTD:** ${state?.potd || 'Not found yet'}\n**PPOTD:** ${state?.ppotd || 'Not found yet'}` },
+            { name: '🩺 Club Health', value: `**Guest Capacity:** ${sheetValue(stats.guestCapacity)}` },
+            { name: '⏳ GP Expiring Soon', value: `**${stats.gpExpiring}** member${stats.gpExpiring === 1 ? '' : 's'} expiring within 7 days.` },
+            { name: '📊 Club Snapshot', value: `**Admins:** ${stats.admins}\n**Perms:** ${stats.perms} members\n**Discord Linked:** ${stats.linked}/${stats.perms}` },
+            { name: '⚠️ Attention', value: attentionText },
+        )
+        .setFooter({ text: 'IN CHAOS, WE RESONATE' });
 }
 
 function buildHubRows() {
@@ -321,7 +398,7 @@ function buildHubRows() {
     );
     return [row1, row2, row3];
 }
-function buildHubPayload() { return { embeds: [buildHubEmbed()], components: buildHubRows() }; }
+async function buildHubPayload() { return { embeds: [await buildHubEmbed()], components: buildHubRows() }; }
 
 function sheetValue(value) {
     // Discord embed field values must be strings. Keep valid 0 values and
