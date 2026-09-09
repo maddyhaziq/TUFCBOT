@@ -308,6 +308,35 @@ async function markGoldPassNotified(sheetRow) {
     });
 }
 
+async function updateMemberDiscordId(ign, discordId) {
+    const rows = await getMembers();
+    if (rows.length === 0) throw new Error('No member data found.');
+
+    const headers = rows[0];
+    const ignIndex = findHeader(headers, ['IGN']);
+    const discordIndex = findHeader(headers, ['DISCORD ID', 'DISCORD USER ID', 'DISCORD_ID']);
+    if (ignIndex === -1 || discordIndex === -1) {
+        throw new Error('IGN or DISCORD ID column could not be found.');
+    }
+
+    const memberRowIndex = rows.findIndex((row, index) =>
+        index > 0 && normalize(row[ignIndex]) === normalize(ign)
+    );
+    if (memberRowIndex === -1) return { success: false, reason: 'MEMBER_NOT_FOUND' };
+
+    const sheetRow = DATA_START_ROW + memberRowIndex - 1;
+    const discordColumn = columnToLetter(discordIndex + DATA_START_COLUMN);
+
+    await sheets.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `'${SHEET_NAME}'!${discordColumn}${sheetRow}`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: [[String(discordId).trim()]] },
+    });
+
+    return { success: true, ign: String(ign).trim(), discordId: String(discordId).trim(), row: sheetRow };
+}
+
 async function updateMemberRole(ign, newRole) {
     const rows = await getMembers();
     if (rows.length === 0) throw new Error('No member data found.');
@@ -357,6 +386,7 @@ module.exports = {
     addMember,
     deleteMember,
     updateMemberRole,
+    updateMemberDiscordId,
     updateMemberStats,
     markGoldPassNotified,
 };
