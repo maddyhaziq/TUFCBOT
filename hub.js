@@ -26,12 +26,72 @@ const {
 } = require('./googlesheets');
 const { PARTY_INFO, parseDuration, formatDuration, listTimers, createTimer } = require('./timers');
 const { solveDormUpgrade } = require('./dorm_calculator');
+const { statePath } = require('./storage');
 
 const MANAGEMENT_CHANNEL_ID = '1546018842357010452';
 const MANAGEMENT_THREAD_ID = '1362653602006696056';
 // Curated management announcements are always delivered to this channel.
 const ANNOUNCEMENT_CHANNEL_IDS = ['1413891617957482538', '1546720584468013196'];
 const ANNOUNCEMENT_CHANNEL_ID = ANNOUNCEMENT_CHANNEL_IDS[0];
+const HUB_STATE_FILE = 'hub_message.json';
+const HUB_REFRESH_HOUR = 3;
+const HUB_REFRESH_MINUTE = 0;
+
+function loadHubMessageState() {
+    try {
+        const fs = require('fs');
+        const path = statePath(HUB_STATE_FILE);
+        if (!fs.existsSync(path)) return null;
+        return JSON.parse(fs.readFileSync(path, 'utf8'));
+    } catch (error) {
+        console.error('[HUB] Could not load saved Hub message state:', error);
+        return null;
+    }
+}
+
+function saveHubMessageState(channelId, messageId) {
+    try {
+        const fs = require('fs');
+        fs.writeFileSync(statePath(HUB_STATE_FILE), JSON.stringify({ channelId, messageId }, null, 2));
+    } catch (error) {
+        console.error('[HUB] Could not save Hub message state:', error);
+    }
+}
+
+async function refreshSavedHub(client) {
+    const saved = loadHubMessageState();
+    if (!saved?.channelId || !saved?.messageId) return false;
+
+    try {
+        const channel = await client.channels.fetch(saved.channelId);
+        if (!channel?.isTextBased()) return false;
+        const message = await channel.messages.fetch(saved.messageId);
+        await message.edit(await buildHubPayload());
+        return true;
+    } catch (error) {
+        console.error('[HUB] Could not refresh saved Hub message:', error);
+        return false;
+    }
+}
+
+function msUntilNextHubRefresh() {
+    const now = new Date();
+    const next = new Date(now);
+    next.setHours(HUB_REFRESH_HOUR, HUB_REFRESH_MINUTE, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+    return next.getTime() - now.getTime();
+}
+
+function startHubAutoRefresh(client) {
+    const schedule = () => {
+        setTimeout(async () => {
+            await refreshSavedHub(client);
+            schedule();
+        }, msUntilNextHubRefresh());
+    };
+    schedule();
+}
+
 
 // Short-lived announcement drafts are kept in memory between the composer modal
 // and the destination-channel picker. They expire automatically so old drafts
@@ -312,27 +372,34 @@ async function getHubStats() {
     const rows = await getMembers();
     const members = findMemberRows(rows).filter(m => String(m.IGN || '').trim());
 
-    const adminRoleNames = new Set([
-        'president',
-        'vice-president',
-        'vice president',
-        'the executive',
-        'the kicker',
-        'the party jockey',
-        'club admin',
-    ]);
-    const isAdminRole = role => adminRoleNames.has(normalizeHeader(role));
+    // TUFC capacity rules — these are the exact ROLE values used by the club sheet.
+    const ADMIN_ROLES = new Set([
+        'president 🐉',
+        'vice-president 『♕』',
+        'the executive『♗』',
+        'the kicker 『♖』',
+        'the party jockey 『♘』',
+    ].map(normalizeHeader));
+    const CLUB_MEMBER_ROLE = normalizeHeader('Club Members ˚˖𓍢ִ໋🦢˚');
+    const GUEST_ROLE = normalizeHeader('Guest 🦋');
+    const BANK_ROLE = normalizeHeader('BANK');
 
-    const admins = members.filter(m => isAdminRole(firstColumnValue(m, ['ROLE']))).length;
-    const perms = members.length;
-    const linked = members.filter(m => {
+    const roleOf = member => normalizeHeader(firstColumnValue(member, ['ROLE']));
+    const admins = members.filter(m => ADMIN_ROLES.has(roleOf(m)));
+    const clubMembers = members.filter(m => roleOf(m) === CLUB_MEMBER_ROLE);
+    const guests = members.filter(m => roleOf(m) === GUEST_ROLE);
+    const bank = members.filter(m => roleOf(m) === BANK_ROLE);
+
+    // Bank is part of the 70 non-guest capacity, not an extra slot.
+    const coreMembers = [...admins, ...clubMembers, ...bank];
+    const CORE_CAPACITY = 70;
+    const GUEST_CAPACITY = 29;
+    const TOTAL_CAPACITY = 99;
+
+    const linked = coreMembers.filter(m => {
         const id = firstColumnValue(m, ['DISCORD ID', 'DISCORD USER ID', 'DISCORD_ID']);
         return String(id || '').trim() && !isTruthySheetValue(id);
     }).length;
-
-    const guestCapacity = firstColumnValue(members[0], [
-        'GUEST CAPACITY', 'GUESTS', 'GUEST CAP', 'GUEST CAPACITY AVAILABLE'
-    ]);
 
     const gpExpiring = members.filter(m => {
         const end = parseDate(firstColumnValue(m, ['GP END DATE', 'GOLD PASS END DATE']));
@@ -343,15 +410,31 @@ async function getHubStats() {
     }).length;
 
     const attention = [];
-    if (!guestCapacity) attention.push('Guest Capacity not found');
-    if (perms === 0) attention.push('No members found');
-    if (members.some(m => !String(firstColumnValue(m, ['ROLE']) || '').trim())) attention.push('Member role missing');
-    if (members.some(m => !String(firstColumnValue(m, ['DISCORD ID', 'DISCORD USER ID', 'DISCORD_ID']) || '').trim())) attention.push('Some Discord accounts are not linked');
+    if (coreMembers.length > CORE_CAPACITY) attention.push(`Member/admin capacity is over 70 (${coreMembers.length}/70)`);
+    if (guests.length > GUEST_CAPACITY) attention.push(`Guest capacity is over 29 (${guests.length}/29)`);
+    if (coreMembers.length + guests.length > TOTAL_CAPACITY) attention.push(`Total club capacity is over 99 (${coreMembers.length + guests.length}/99)`);
+    if (perMissingRole(members)) attention.push('Some members have no ROLE assigned');
+    if (coreMembers.some(m => !String(firstColumnValue(m, ['DISCORD ID', 'DISCORD USER ID', 'DISCORD_ID']) || '').trim())) attention.push('Some members/admins are not linked to Discord');
+    if (!attention.length) attention.push('All core club data looks good');
 
     return {
-        members, admins, perms, linked, guestCapacity, gpExpiring,
-        attention: attention.length ? attention : ['All core member data looks good'],
+        members,
+        admins: admins.length,
+        clubMembers: clubMembers.length,
+        guests: guests.length,
+        bank: bank.length,
+        coreMembers: coreMembers.length,
+        coreCapacity: CORE_CAPACITY,
+        guestCapacity: GUEST_CAPACITY,
+        totalCapacity: TOTAL_CAPACITY,
+        linked,
+        gpExpiring,
+        attention,
     };
+}
+
+function perMissingRole(members) {
+    return members.some(m => !String(firstColumnValue(m, ['ROLE']) || '').trim());
 }
 
 async function buildHubEmbed() {
@@ -361,7 +444,11 @@ async function buildHubEmbed() {
         stats = await getHubStats();
     } catch (error) {
         console.error('[HUB] Failed to load Google Sheets stats:', error);
-        stats = { admins: 0, perms: 0, linked: 0, guestCapacity: '', gpExpiring: 0, attention: ['Google Sheets data could not be loaded'] };
+        stats = {
+            admins: 0, clubMembers: 0, guests: 0, bank: 0, coreMembers: 0,
+            coreCapacity: 70, guestCapacity: 29, totalCapacity: 99, linked: 0,
+            gpExpiring: 0, attention: ['Google Sheets data could not be loaded'],
+        };
     }
 
     const attentionText = stats.attention.map(item => `• ${item}`).join('\n');
@@ -371,34 +458,14 @@ async function buildHubEmbed() {
         .setTitle('🦆 TUFCBOT • Member Hub')
         .setDescription('Your PIMD tools and club management in one place.\nUse the buttons below to open a tool.')
         .addFields(
-            { name: '🏹 Today\'s Parties', value: `**POTD:** ${state?.potd || 'Not found yet'}\n**PPOTD:** ${state?.ppotd || 'Not found yet'}` },
-            { name: '🩺 Club Health', value: `**Guest Capacity:** ${sheetValue(stats.guestCapacity)}` },
-            { name: '⏳ GP Expiring Soon', value: `**${stats.gpExpiring}** member${stats.gpExpiring === 1 ? '' : 's'} expiring within 7 days.` },
-            { name: '📊 Club Snapshot', value: `**Admins:** ${stats.admins}\n**Perms:** ${stats.perms} members\n**Discord Linked:** ${stats.linked}/${stats.perms}` },
-            { name: '⚠️ Attention', value: attentionText },
+            { name: '🏹 TODAY\'S PARTIES', value: `**POTD:** ${state?.potd || 'Not found yet'}\n**PPOTD:** ${state?.ppotd || 'Not found yet'}` },
+            { name: '🩺 CLUB HEALTH', value: `**Members + Admins:** ${stats.coreMembers}/${stats.coreCapacity}\n**Guests:** ${stats.guests}/${stats.guestCapacity}\n**Total:** ${stats.coreMembers + stats.guests}/${stats.totalCapacity}` },
+            { name: '⏳ GP EXPIRING SOON', value: `**${stats.gpExpiring}** member${stats.gpExpiring === 1 ? '' : 's'} expiring within 7 days.` },
+            { name: '📊 CLUB SNAPSHOT', value: `**Admins:** ${stats.admins}\n**Club Members:** ${stats.clubMembers}\n**Bank:** ${stats.bank}\n**Discord Linked:** ${stats.linked}/${stats.coreMembers}` },
+            { name: '⚠️ ATTENTION', value: attentionText },
         )
         .setFooter({ text: 'IN CHAOS, WE RESONATE' });
 }
-
-function buildHubRows() {
-    const row1 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('tufc_hub_member').setLabel('Members').setEmoji('👥').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('tufc_hub_goldpass').setLabel('Gold Passes').setEmoji('💳').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId('tufc_hub_timers').setLabel('EC Party Timers').setEmoji('⏱️').setStyle(ButtonStyle.Primary),
-    );
-    const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('tufc_hub_lbh').setLabel('LBH Call').setEmoji('📣').setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId('tufc_hub_potd').setLabel('POTD Lookup').setEmoji('🎯').setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('tufc_hub_announcement').setLabel('Announcement').setEmoji('📢').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId('tufc_hub_admin').setLabel('Admin').setEmoji('🛠️').setStyle(ButtonStyle.Danger),
-    );
-    const row3 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('tufc_hub_dorm_upgrade').setLabel('New Dorm Tower Upgrade Calculator').setEmoji('🏢').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('tufc_hub_link_discord').setLabel('Link Discord').setEmoji('🔗').setStyle(ButtonStyle.Secondary),
-    );
-    return [row1, row2, row3];
-}
-async function buildHubPayload() { return { embeds: [await buildHubEmbed()], components: buildHubRows() }; }
 
 function sheetValue(value) {
     // Discord embed field values must be strings. Keep valid 0 values and
@@ -1271,4 +1338,4 @@ async function handleHubModal(interaction, client) {
     return true;
 }
 
-module.exports = { buildHubEmbed, buildHubRows, buildHubPayload, handleHubButton, handleHubModal, handleHubSelectMenu, isManagementAuthorized };
+module.exports = { buildHubEmbed, buildHubRows, buildHubPayload, handleHubButton, handleHubModal, handleHubSelectMenu, isManagementAuthorized, saveHubMessageState, refreshSavedHub, startHubAutoRefresh };
