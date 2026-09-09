@@ -894,7 +894,63 @@ async function handleHubModal(interaction, client) {
         const member = await lookupMember(interaction.fields.getTextInputValue('ign'));
         return interaction.reply({ flags: 64, embeds: [member ? goldPassEmbed(member) : new EmbedBuilder().setTitle('💳 Gold Pass').setDescription('❌ Member not found.')] });
     }
+if (id === 'tufc_modal_member_role_lookup') {
+    await interaction.deferReply({ flags: 64 });
 
+    try {
+        const ign = interaction.fields.getTextInputValue('ign').trim();
+        const sheetMember = await lookupMember(ign);
+
+        if (!sheetMember?.IGN) {
+            return interaction.editReply(`❌ **${ign}** could not be found in Google Sheets.`);
+        }
+
+        const rows = await getMembers();
+
+        const roleNames = [
+            ...new Set(
+                findMemberRows(rows)
+                    .map(m => String(m.ROLE || '').trim())
+                    .filter(Boolean)
+            )
+        ].sort((a, b) => a.localeCompare(b));
+
+        if (!roleNames.length) {
+            return interaction.editReply('❌ No roles were found in the Google Sheets ROLE column.');
+        }
+
+        if (roleNames.length > 25) {
+            return interaction.editReply(
+                `❌ There are ${roleNames.length} Google Sheets roles. Discord menus support up to 25 choices.`
+            );
+        }
+
+        return interaction.editReply({
+            content: `👤 **${sheetMember.IGN}** selected from Google Sheets.\n🏷️ Choose the new Google Sheets role for this member.`,
+            components: [
+                new ActionRowBuilder().addComponents(
+                    new StringSelectMenuBuilder()
+                        .setCustomId(`tufc_member_role_pick:${encodeURIComponent(sheetMember.IGN)}`)
+                        .setPlaceholder('Select Google Sheets role')
+                        .setMinValues(1)
+                        .setMaxValues(1)
+                        .addOptions(
+                            roleNames.map(name => ({
+                                label: name.slice(0, 100),
+                                value: name.slice(0, 100)
+                            }))
+                        )
+                )
+            ]
+        });
+
+    } catch (error) {
+        console.error('[MEMBER ROLE LOOKUP] Failed:', error);
+        return interaction.editReply(
+            '❌ I could not look up that member. Check the Railway logs for details.'
+        );
+    }
+}
     // Delete Member must acknowledge the Discord modal before the role check.
     // The management-role lookup calls Discord and can occasionally exceed
     // Discord's 3-second interaction window.
