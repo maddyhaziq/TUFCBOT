@@ -1087,6 +1087,33 @@ async function handleHubModal(interaction, client) {
         try { const member = await lookupMember(interaction.fields.getTextInputValue('ign')); return interaction.editReply(member ? { embeds: [memberEmbed(member)] } : '❌ Member not found.'); }
         catch (e) { console.error(e); return interaction.editReply('❌ Google Sheets lookup failed.'); }
     }
+
+    if (id === 'tufc_modal_member_add') {
+        // Acknowledge immediately so Discord does not show "Something went wrong"
+        // while the Google Sheets append is running.
+        await interaction.deferReply({ flags: 64 });
+        if (!(await isAdmin(interaction))) {
+            return interaction.editReply('❌ Only authorized management roles can add members.');
+        }
+        try {
+            const ign = interaction.fields.getTextInputValue('ign').trim();
+            if (!ign) return interaction.editReply('❌ Member IGN cannot be empty.');
+
+            const result = await addMember(ign);
+            if (!result.success && result.reason === 'MEMBER_EXISTS') {
+                return interaction.editReply(`❌ **${ign}** already exists in Google Sheets.`);
+            }
+            if (!result.success) {
+                return interaction.editReply(`❌ I could not add **${ign}** to Google Sheets.`);
+            }
+
+            return interaction.editReply(`✅ **${result.ign}** was added to Google Sheets successfully.`);
+        } catch (error) {
+            console.error(`[ADD MEMBER] Failed for IGN "${interaction.fields.getTextInputValue('ign').trim()}"`, error);
+            const detail = error?.message ? String(error.message) : 'Unknown error';
+            return interaction.editReply(`❌ I couldn't add the member.\n\n**Reason:** ${detail.slice(0, 1500)}`);
+        }
+    }
     if (id === 'tufc_modal_gp_lookup') {
         const member = await lookupMember(interaction.fields.getTextInputValue('ign'));
         return interaction.reply({ flags: 64, embeds: [member ? goldPassEmbed(member) : new EmbedBuilder().setTitle('💳 Gold Pass').setDescription('❌ Member not found.')] });
