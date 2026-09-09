@@ -365,10 +365,10 @@ async function buildHubEmbed() {
         .setTitle('🦆 TUFCBOT • Member Hub')
         .setDescription('Your PIMD tools and club management in one place.\nUse the buttons below to open a tool.')
         .addFields(
-            { name: '🏹 TODAY\'S PARTIES', value: `**POTD:** ${state?.potd || 'Not found yet'}\n**PPOTD:** ${state?.ppotd || 'Not found yet'}`, inline: false },
-            { name: '🏥 CLUB HEALTH', value: `**Members + Admins:** ${stats.coreMembers}/${stats.capacities.core}\n**Guests:** ${stats.guests}/${stats.capacities.guests}\n**Total:** ${stats.totalMembers}/${stats.capacities.total}`, inline: false },
+            { name: '🏹 TODAY\'S PARTIES', value: `🎯 **POTD:** ${state?.potd || 'Not found yet'}\n🔥 **PPOTD:** ${state?.ppotd || 'Not found yet'}`, inline: false },
+            { name: '🏥 CLUB HEALTH', value: `👥 **Members + Admins:** ${stats.coreMembers}/${stats.capacities.core}\n🦋 **Guests:** ${stats.guests}/${stats.capacities.guests}\n📊 **Total:** ${stats.totalMembers}/${stats.capacities.total}`, inline: false },
             { name: '🎟️ GP EXPIRING SOON', value: expiringText, inline: false },
-            { name: '📋 CLUB SNAPSHOT', value: `**Admins:** ${stats.admins}\n**Club Members:** ${stats.clubMembers}\n**Bank:** ${stats.bank}\n**Perms:** ${stats.coreMembers}\n**Discord Linked:** ${stats.discordLinked}/${stats.linkableMembers}`, inline: false },
+            { name: '📋 CLUB SNAPSHOT', value: `👑 **Admins:** ${stats.admins}\n👥 **Club Members:** ${stats.clubMembers}\n🏦 **Bank:** ${stats.bank}\n🛡️ **Perms:** ${stats.coreMembers}\n🔗 **Discord Linked:** ${stats.discordLinked}/${stats.linkableMembers}`, inline: false },
             { name: '⚠️ ATTENTION', value: attentionText, inline: false },
         )
         .setFooter({ text: 'IN CHAOS, WE RESONATE' })
