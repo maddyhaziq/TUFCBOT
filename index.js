@@ -9,17 +9,14 @@ const {
     EmbedBuilder,
     ActionRowBuilder,
     ButtonBuilder,
-    ButtonStyle,
-    ChannelType
+    ButtonStyle
 } = require('discord.js');
 
 const { getMembers, updateGoldPass, markGoldPassNotified } = require('./googlesheets');
 const { checkPOTD, startPOTDMonitor, loadState, saveState } = require('./potdmonitor');
-const { buildHubPayload, handleHubButton, handleHubModal, handleHubSelectMenu, isManagementAuthorized } = require('./hub');
-const { buildPublicHubPayload, handlePublicButton, handlePublicModal } = require('./publichub');
+const { buildHubPayload, handleHubButton, handleHubModal, handleHubSelectMenu, isManagementAuthorized, saveHubMessageState, refreshSavedHub, startHubAutoRefresh } = require('./hub');
 const { startTimers } = require('./timers');
 const { startEventMonitor } = require('./eventmonitor');
-const { ensureDatabaseSheets } = require('./pimd_database');
 const { startDashboard } = require('./dashboard/server');
 
 const client = new Client({
@@ -32,25 +29,7 @@ const GUILD_ID = '1362609555900600503';
 // TUFCBOT Application ID
 const CLIENT_ID = '1545247213800919111';
 
-// Approved channels for the /announcement command.
-const ANNOUNCEMENT_CHANNEL_IDS = ['1413891617957482538', '1546720584468013196'];
-
 const commands = [
-    new SlashCommandBuilder()
-        .setName('pimd')
-        .setDescription('Public Party in my Dorm tools')
-        .addSubcommand(subcommand => subcommand.setName('potd').setDescription("Show today's POTD and PPOTD"))
-        .addSubcommand(subcommand => subcommand.setName('price').setDescription('Search the public PIMD price database').addStringOption(option => option.setName('item').setDescription('Item name').setRequired(true)))
-        .addSubcommand(subcommand => subcommand.setName('item').setDescription('Search the public PIMD item database').addStringOption(option => option.setName('name').setDescription('Item name').setRequired(true)))
-        .addSubcommand(subcommand => subcommand.setName('assistant').setDescription('Open the public PIMD Assistant')),
-
-    new SlashCommandBuilder()
-        .setName('publichub')
-        .setDescription('Post the public PIMD tools panel (Management only)'),
-    new SlashCommandBuilder()
-        .setName('pimddb')
-        .setDescription('Manage the TUFC PIMD database (Management only)')
-        .addSubcommand(subcommand => subcommand.setName('setup').setDescription('Create/verify TUFC PIMD database sheets')),
     new SlashCommandBuilder()
         .setName('ping')
         .setDescription('Check if TUFCBOT is responding')
@@ -113,14 +92,6 @@ const commands = [
                 )
         )
         ,
-
-    new SlashCommandBuilder()
-        .setName('announcement')
-        .setDescription('Create a TUFC announcement with an optional image')
-        .addStringOption(option => option.setName('title').setDescription('Announcement title').setRequired(true))
-        .addStringOption(option => option.setName('message').setDescription('Announcement message').setRequired(true))
-        .addChannelOption(option => option.setName('channel').setDescription('Channel to post in').setRequired(false).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))
-        .addAttachmentOption(option => option.setName('image').setDescription('Optional image attachment').setRequired(false)),
 
     new SlashCommandBuilder()
         .setName('hub')
@@ -190,15 +161,10 @@ const rest = new REST({ version: '10' })
     }
 })();
 
-client.once('clientReady', async () => {
+client.once('clientReady', () => {
     console.log(`✅ ${client.user.tag} is online!`);
     startDashboard(client);
-    try {
-        await ensureDatabaseSheets();
-        console.log('✅ TUFC PIMD database sheets are ready.');
-    } catch (error) {
-        console.error('❌ TUFC PIMD database setup failed:', error.message);
-    }
+    startHubAutoRefresh(client);
 });
 
 
@@ -232,29 +198,6 @@ function daysRemaining(endDate) {
 
 
 client.on('interactionCreate', async interaction => {
-
-    // Public PIMD tools
-    if (interaction.isButton()) {
-        try {
-            const handled = await handlePublicButton(interaction);
-            if (handled) return;
-        } catch (error) {
-            console.error('Public PIMD button error:', error);
-            if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ TUFCBOT could not complete that public tool.', flags: 64 }).catch(() => {});
-            return;
-        }
-    }
-
-    if (interaction.isModalSubmit()) {
-        try {
-            const handled = await handlePublicModal(interaction);
-            if (handled) return;
-        } catch (error) {
-            console.error('Public PIMD modal error:', error);
-            if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: '❌ TUFCBOT could not complete that public tool.', flags: 64 }).catch(() => {});
-            return;
-        }
-    }
 
     // Member Hub buttons and forms
     if (interaction.isButton()) {
@@ -298,90 +241,6 @@ client.on('interactionCreate', async interaction => {
 
     if (!interaction.isChatInputCommand()) return;
 
-    // =========================
-    // /publichub
-    // =========================
-    if (interaction.commandName === 'announcement') {
-        if (!(await isManagementAuthorized(interaction))) {
-            return interaction.reply({ flags: 64, content: '❌ Only authorized TUFC management roles can create announcements.' });
-        }
-        const title = interaction.options.getString('title', true).trim();
-        const message = interaction.options.getString('message', true).trim();
-        const selectedChannel = interaction.options.getChannel('channel');
-        const image = interaction.options.getAttachment('image');
-        const channelId = selectedChannel?.id || ANNOUNCEMENT_CHANNEL_IDS[0];
-        if (!ANNOUNCEMENT_CHANNEL_IDS.includes(channelId)) {
-            return interaction.reply({ flags: 64, content: '❌ That channel is not approved for TUFC announcements.' });
-        }
-        const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
-        if (!channel || !channel.isTextBased() || ![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) {
-            return interaction.reply({ flags: 64, content: '❌ Please choose a normal text or announcement channel.' });
-        }
-        const permissions = channel.permissionsFor(interaction.guild.members.me);
-        if (!permissions?.has('ViewChannel') || !permissions?.has('SendMessages') || !permissions?.has('EmbedLinks')) {
-            return interaction.reply({ flags: 64, content: `❌ I cannot post in <#${channel.id}>. I need **View Channel**, **Send Messages**, and **Embed Links** there.` });
-        }
-        if (title.length > 256) return interaction.reply({ flags: 64, content: '❌ Announcement title is too long (maximum 256 characters).' });
-        if (message.length > 4096) return interaction.reply({ flags: 64, content: '❌ Announcement message is too long (maximum 4096 characters).' });
-        if (image && !image.contentType?.startsWith('image/')) return interaction.reply({ flags: 64, content: '❌ The attachment must be an image.' });
-        const embed = new EmbedBuilder().setColor(0x5865F2).setTitle(`📢 ${title}`).setDescription(message).setFooter({ text: `TUFCBOT • Posted by ${interaction.member?.displayName || interaction.user.username}` }).setTimestamp();
-        if (image) embed.setImage(image.url);
-        await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
-        return interaction.reply({ flags: 64, content: `✅ Announcement sent to <#${channel.id}>${image ? ' with the uploaded image.' : '.'}` });
-    }
-
-    if (interaction.commandName === 'publichub') {
-        if (!(await isManagementAuthorized(interaction))) {
-            return await interaction.reply({ content: '❌ Only authorized TUFC management can post the public PIMD hub.', flags: 64 });
-        }
-        const targetId = String(process.env.PUBLIC_PIMD_CHANNEL_ID || '').trim();
-        const channel = targetId ? await client.channels.fetch(targetId).catch(() => null) : interaction.channel;
-        if (!channel || !channel.isTextBased()) return await interaction.reply({ content: '❌ Public PIMD channel is not configured or unavailable.', flags: 64 });
-        await channel.send(buildPublicHubPayload());
-        return await interaction.reply({ content: `✅ Public PIMD Hub posted in <#${channel.id}>.`, flags: 64 });
-    }
-
-    // =========================
-    // /pimddb
-    // =========================
-    if (interaction.commandName === 'pimddb') {
-        if (!(await isManagementAuthorized(interaction))) {
-            return await interaction.reply({ content: '❌ Only authorized TUFC management can manage the PIMD database.', flags: 64 });
-        }
-        if (interaction.options.getSubcommand() === 'setup') {
-            await interaction.deferReply({ flags: 64 });
-            try {
-                await ensureDatabaseSheets();
-                return await interaction.editReply('✅ TUFC PIMD database is ready. The database tabs are in the TUFC Google Sheet.');
-            } catch (error) {
-                console.error('PIMD database setup error:', error);
-                return await interaction.editReply(`❌ Database setup failed: ${error.message}`);
-            }
-        }
-    }
-
-    // =========================
-    // /pimd
-    // =========================
-    if (interaction.commandName === 'pimd') {
-        if (process.env.PUBLIC_PIMD_CHANNEL_ID && !interaction.channel?.isThread?.() && interaction.channelId !== process.env.PUBLIC_PIMD_CHANNEL_ID) {
-            return await interaction.reply({ content: `❌ Please use the public PIMD tools in <#${process.env.PUBLIC_PIMD_CHANNEL_ID}>.`, flags: 64 });
-        }
-        const sub = interaction.options.getSubcommand();
-        if (sub === 'potd') {
-            const state = loadState();
-            return await interaction.reply({ embeds: [new EmbedBuilder().setTitle('🎯 PIMD Party of the Day').addFields({ name: '🎉 POTD', value: state?.potd || 'Not found yet', inline: true }, { name: '💎 PPOTD', value: state?.ppotd || 'Not found yet', inline: true })] });
-        }
-        if (sub === 'price') {
-            return await interaction.showModal(new (require('discord.js').ModalBuilder)().setCustomId('tufc_public_price_modal').setTitle('💰 PIMD Price Check').addComponents(new (require('discord.js').ActionRowBuilder)().addComponents(new (require('discord.js').TextInputBuilder)().setCustomId('query').setLabel('Item name').setPlaceholder(interaction.options.getString('item')).setStyle(require('discord.js').TextInputStyle.Short).setRequired(true))));
-        }
-        if (sub === 'item') {
-            return await interaction.showModal(new (require('discord.js').ModalBuilder)().setCustomId('tufc_public_item_modal').setTitle('🗃️ PIMD Item Database').addComponents(new (require('discord.js').ActionRowBuilder)().addComponents(new (require('discord.js').TextInputBuilder)().setCustomId('query').setLabel('Item name').setPlaceholder(interaction.options.getString('name')).setStyle(require('discord.js').TextInputStyle.Short).setRequired(true))));
-        }
-        if (sub === 'assistant') {
-            return await interaction.showModal(new (require('discord.js').ModalBuilder)().setCustomId('tufc_public_assistant_modal').setTitle('🤖 PIMD Assistant').addComponents(new (require('discord.js').ActionRowBuilder)().addComponents(new (require('discord.js').TextInputBuilder)().setCustomId('question').setLabel('What do you need help with?').setPlaceholder('Ask about POTD, prices or items').setStyle(require('discord.js').TextInputStyle.Paragraph).setRequired(true))));
-        }
-    }
 
     // =========================
     // /hub
@@ -396,11 +255,17 @@ client.on('interactionCreate', async interaction => {
                 });
             }
 
-            // Acknowledge the interaction immediately, then edit it with the panel.
-            // This prevents Discord's \"application did not respond\" message if
-            // embed/button construction takes longer than expected or throws.
-            await interaction.deferReply();
-            await interaction.editReply(await buildHubPayload());
+            // Acknowledge immediately. Reuse the saved Hub message when possible;
+            // otherwise create the first Hub message and remember its channel/message ID.
+            await interaction.deferReply({ flags: 64 });
+            const refreshed = await refreshSavedHub(client);
+            if (refreshed) {
+                await interaction.editReply('✅ TUFCBOT Member Hub refreshed.');
+            } else {
+                const message = await interaction.channel.send(await buildHubPayload());
+                saveHubMessageState(interaction.channelId, message.id);
+                await interaction.editReply('✅ TUFCBOT Member Hub created.');
+            }
         } catch (error) {
             console.error('Member Hub command error:', error);
             if (interaction.deferred || interaction.replied) {
