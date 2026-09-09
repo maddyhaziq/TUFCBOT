@@ -894,6 +894,31 @@ async function handleHubModal(interaction, client) {
         const member = await lookupMember(interaction.fields.getTextInputValue('ign'));
         return interaction.reply({ flags: 64, embeds: [member ? goldPassEmbed(member) : new EmbedBuilder().setTitle('💳 Gold Pass').setDescription('❌ Member not found.')] });
     }
+
+    // Delete Member must acknowledge the Discord modal before the role check.
+    // The management-role lookup calls Discord and can occasionally exceed
+    // Discord's 3-second interaction window.
+    if (id === 'tufc_modal_member_delete') {
+        await interaction.deferReply({ flags: 64 });
+        if (!(await isAdmin(interaction))) {
+            return interaction.editReply('❌ Only authorized management roles can perform this action.');
+        }
+        try {
+            const ign = interaction.fields.getTextInputValue('ign').trim();
+            if (!ign) return interaction.editReply('❌ Member IGN cannot be empty.');
+
+            const r = await deleteMember(ign);
+            if (!r.success && r.reason === 'MEMBER_NOT_FOUND') {
+                return interaction.editReply(`❌ **${ign}** was not found in Google Sheets.`);
+            }
+            return interaction.editReply(`🗑️ **${ign}** was permanently removed from Google Sheets — row ${r.row} deleted.`);
+        } catch (error) {
+            console.error(`[DELETE MEMBER] Failed for IGN "${interaction.fields.getTextInputValue('ign').trim()}"`, error);
+            const detail = error?.message ? String(error.message) : 'Unknown error';
+            return interaction.editReply(`❌ I couldn't delete the member.\n\n**Reason:** ${detail.slice(0, 1500)}`);
+        }
+    }
+
     if (!(await isAdmin(interaction))) { await interaction.reply({ content: '❌ Only authorized management roles can perform this action.', ephemeral: true }); return true; }
 
     try {
@@ -929,27 +954,6 @@ async function handleHubModal(interaction, client) {
                 content: `📢 **Announcement ready.**\n${imageNote}\n\nChoose the channel to post it. Approved TUFC announcement channels are <#${ANNOUNCEMENT_CHANNEL_IDS[0]}> and <#${ANNOUNCEMENT_CHANNEL_IDS[1]}>.`,
                 components: [announcementChannelPicker(draftId)]
             });
-        }
-
-
-        if (id === 'tufc_modal_member_delete') {
-            const ign = interaction.fields.getTextInputValue('ign').trim();
-            if (!ign) return interaction.reply({ flags: 64, content: '❌ Member IGN cannot be empty.' });
-
-            await interaction.deferReply({ flags: 64 });
-            try {
-                const r = await deleteMember(ign);
-
-                if (!r.success && r.reason === 'MEMBER_NOT_FOUND') {
-                    return interaction.editReply(`❌ **${ign}** was not found in Google Sheets.`);
-                }
-
-                return interaction.editReply(`🗑️ **${ign}** was permanently removed from Google Sheets — row ${r.row} deleted.`);
-            } catch (error) {
-                console.error(`[DELETE MEMBER] Discord request failed for IGN "${ign}"`, error);
-                const detail = error?.message ? String(error.message) : 'Unknown error';
-                return interaction.editReply(`❌ I couldn't delete **${ign}**.\n\n**Reason:** ${detail.slice(0, 1500)}`);
-            }
         }
 
         if (id.startsWith('tufc_modal_member_change_sheet:')) {
