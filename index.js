@@ -139,6 +139,8 @@ const commands = [
         ),
 
     new SlashCommandBuilder()
+        .setName('publichub')
+        .setDescription('Post the TUFC Public Hub'),
         .setName('potd')
         .setDescription('Check and monitor Party in my Dorm Party of the Day')
         .addSubcommand(subcommand =>
