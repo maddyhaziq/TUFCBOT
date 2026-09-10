@@ -9,6 +9,8 @@ const {
 } = require('discord.js');
 const { loadState } = require('./potdmonitor');
 const { searchDatabase } = require('./pimd_database');
+const { getMembers } = require('./googlesheets');
+const { solveDormUpgrade } = require('./dorm_calculator');
 
 function normalize(value) { return String(value || '').trim().toLowerCase(); }
 
@@ -22,26 +24,95 @@ function accessReply(interaction) {
     return interaction.reply({ flags: 64, content: `❌ Please use the public PIMD tools in <#${process.env.PUBLIC_PIMD_CHANNEL_ID}>.` });
 }
 
-function buildPublicHubPayload() {
+async function buildPublicHubPayload() {
     const state = loadState();
+
+    let totalMembers = 0;
+    let activeMembers = 0;
+
+    try {
+        const rows = await getMembers();
+
+        if (rows.length > 1) {
+            const headers = rows[0].map(h => String(h || '').trim().toUpperCase());
+
+            const ignIndex = headers.indexOf('IGN');
+            const statusIndex = headers.indexOf('STATUS');
+
+            const members = rows.slice(1).filter(row => {
+                if (ignIndex === -1) return false;
+                return String(row[ignIndex] || '').trim() !== '';
+            });
+
+            totalMembers = members.length;
+
+            if (statusIndex !== -1) {
+                activeMembers = members.filter(row =>
+                    String(row[statusIndex] || '').trim().toLowerCase() === 'active'
+                ).length;
+            }
+        }
+    } catch (error) {
+        console.error('PublicHub member stats error:', error);
+    }
+
     return {
-        embeds: [new EmbedBuilder()
-            .setTitle('🌐 TUFCBOT • PIMD Public Hub')
-            .setDescription('Independent TUFC PIMD database and public utilities.\nNo TUFC management access is required.')
-            .addFields(
-                { name: '🎯 POTD', value: state?.potd ? `**${state.potd}**` : 'Not found yet', inline: true },
-                { name: '💎 PPOTD', value: state?.ppotd ? `**${state.ppotd}**` : 'Not found yet', inline: true },
-                { name: '🗃️ Database', value: 'Items • Furniture • Boxes • Avatars • Parties • Prices', inline: false },
-            )
-            .setFooter({ text: 'TUFCBOT • Independent PIMD Database' })],
+        embeds: [
+            new EmbedBuilder()
+                .setTitle('🌐 TUFC PUBLIC HUB')
+                .setDescription(
+                    'Welcome to **The United Football Club**.\n\n' +
+                    'Public information and useful TUFC tools.'
+                )
+                .addFields(
+                    {
+                        name: '📊 Club Stats',
+                        value:
+                            `👥 **Total Members:** ${totalMembers}\n` +
+                            `🟢 **Active Members:** ${activeMembers}`,
+                        inline: false
+                    },
+                    {
+                        name: '🎉 Party of the Day',
+                        value:
+                            `🎯 **POTD:** ${state?.potd || 'Not found yet'}\n` +
+                            `💎 **PPOTD:** ${state?.ppotd || 'Not found yet'}`,
+                        inline: false
+                    },
+                    {
+                        name: '🏗️ New Dorm Tower Upgrade',
+                        value: 'Use the calculator to find the best tower upgrade combination based on your stats, cash and opened dorms.',
+                        inline: false
+                    },
+                    {
+                        name: '🤝 Recruitment',
+                        value: 'Interested in joining TUFC?\nClick **Join TUFC** below.',
+                        inline: false
+                    }
+                )
+                .setFooter({ text: 'TUFCBOT • Public Hub' })
+                .setTimestamp()
+        ],
+
         components: [
             new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('tufc_public_potd').setLabel('POTD Lookup').setEmoji('🎯').setStyle(ButtonStyle.Primary),
-                new ButtonBuilder().setCustomId('tufc_public_price').setLabel('Price Check').setEmoji('💰').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId('tufc_public_item').setLabel('Item Database').setEmoji('🗃️').setStyle(ButtonStyle.Secondary),
-            ),
-            new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('tufc_public_assistant').setLabel('PIMD Assistant').setEmoji('🤖').setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('tufc_public_potd')
+                    .setLabel('POTD')
+                    .setEmoji('🎉')
+                    .setStyle(ButtonStyle.Primary),
+
+                new ButtonBuilder()
+                    .setCustomId('tufc_public_dorm_upgrade')
+                    .setLabel('Dorm Tower Upgrade')
+                    .setEmoji('🏗️')
+                    .setStyle(ButtonStyle.Secondary),
+
+                new ButtonBuilder()
+                    .setLabel('Join TUFC')
+                    .setEmoji('🤝')
+                    .setStyle(ButtonStyle.Link)
+                    .setURL('https://discord.gg/SzcT7aq8Uq')
             )
         ]
     };
@@ -73,9 +144,50 @@ function sourceFooter(record) {
 function first(results, sheet) { return results.find(r => r.sheet === sheet)?.record || null; }
 
 async function handlePublicButton(interaction) {
-    const ids = ['tufc_public_potd', 'tufc_public_price', 'tufc_public_item', 'tufc_public_assistant'];
+    const ids = [
+    'tufc_public_potd',
+    'tufc_public_price',
+    'tufc_public_item',
+    'tufc_public_assistant',
+    'tufc_public_dorm_upgrade'
+];
     if (!ids.includes(interaction.customId)) return false;
     if (!publicAllowed(interaction)) { await accessReply(interaction); return true; }
+    if (interaction.customId === 'tufc_public_dorm_upgrade') {
+    await interaction.showModal(
+        new ModalBuilder()
+            .setCustomId('tufc_public_dorm_upgrade_modal')
+            .setTitle('🏗️ New Dorm Tower Upgrade Calculator')
+            .addComponents(
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('stats')
+                        .setLabel('Current Stats (S)')
+                        .setPlaceholder('Enter your current stats')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true)
+                ),
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('cash')
+                        .setLabel('Cash (C)')
+                        .setPlaceholder('Example: 2.5T or 850B')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true)
+                ),
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('dorms')
+                        .setLabel('Opened Dorms (D)')
+                        .setPlaceholder('Example: 20')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true)
+                )
+            )
+    );
+
+    return true;
+}
 
     if (interaction.customId === 'tufc_public_price') { await interaction.showModal(priceModal()); return true; }
     if (interaction.customId === 'tufc_public_item') { await interaction.showModal(itemModal()); return true; }
@@ -94,6 +206,72 @@ async function handlePublicModal(interaction) {
     if (!publicAllowed(interaction)) { await accessReply(interaction); return true; }
 
     if (interaction.customId === 'tufc_public_price_modal') {
+    if (interaction.customId === 'tufc_public_dorm_upgrade_modal') {
+        const stats = interaction.fields.getTextInputValue('stats');
+        const cash = interaction.fields.getTextInputValue('cash');
+        const dorms = interaction.fields.getTextInputValue('dorms');
+
+        const result = solveDormUpgrade({
+            stats,
+            cash,
+            dorms
+        });
+
+        if (result.error) {
+            return interaction.reply({
+                flags: 64,
+                content: `❌ ${result.error}`
+            });
+        }
+
+        const embed = new EmbedBuilder()
+            .setTitle('🏗️ New Dorm Tower Upgrade')
+            .addFields(
+                {
+                    name: '📊 Current Stats',
+                    value: String(result.stats),
+                    inline: true
+                },
+                {
+                    name: '💰 Cash',
+                    value: String(result.cash),
+                    inline: true
+                },
+                {
+                    name: '🏢 Opened Dorms',
+                    value: String(result.dorms),
+                    inline: true
+                },
+                {
+                    name: '💵 Total Cost',
+                    value: result.totalCostDisplay,
+                    inline: true
+                },
+                {
+                    name: '💰 Cash Left',
+                    value: result.cashLeftDisplay,
+                    inline: true
+                },
+                {
+                    name: '📈 Stats Increase',
+                    value: result.statsIncreaseDisplay,
+                    inline: true
+                },
+                {
+                    name: '🏆 Best Combination',
+                    value: result.bestCombination,
+                    inline: false
+                }
+            )
+            .setFooter({
+                text: 'TUFCBOT • New Dorm Tower Upgrade Calculator'
+            });
+
+        return interaction.reply({
+            flags: 64,
+            embeds: [embed]
+        });
+    }
         const query = interaction.fields.getTextInputValue('query').trim();
         const results = await searchDatabase(query, ['PIMD_PRICES']);
         const price = results[0]?.record;
