@@ -272,6 +272,10 @@ client.on('interactionCreate', async interaction => {
     }
 
     if (interaction.isModalSubmit()) {
+        if (interaction.customId.startsWith('tufc_public_')) {
+    await handlePublicModal(interaction);
+    return;
+}
         try {
             const handled = await handleHubModal(interaction, client);
             if (handled) return;
