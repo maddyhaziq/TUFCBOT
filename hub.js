@@ -902,7 +902,7 @@ async function handleHubTimerMentionSelect(interaction) {
     const mentionDropper = interaction.values[0] === 'yes';
     pendingTimers.delete(draftId);
     try {
-        const dropperDiscordId = mentionDropper ? await findDiscordIdForIgn(draft.ign) : null;
+        const dropperDiscordId = mentionDropper ? (draft.dropperIsCreator ? interaction.user.id : await findDiscordIdForIgn(draft.ign)) : null;
         const timer = await createTimer({ partyKey: draft.partyKey, durationMs: draft.durationMs, ign: draft.ign, channel: interaction.channel, creatorId: interaction.user.id, dropperDiscordId, mentionDropper });
         let dropperStatus = '🔕 Dropper mention: **No**';
         if (mentionDropper && dropperDiscordId) dropperStatus = `🔔 Dropper mention: <@${dropperDiscordId}>`;
@@ -1407,7 +1407,7 @@ async function handleHubModal(interaction, client) {
                 ign = await findIgnForDiscordId(interaction.user.id) || interaction.member?.displayName || interaction.user.globalName || interaction.user.username;
             }
             const draftId = createTimerDraftId(interaction.user.id);
-            pendingTimers.set(draftId, { createdAt: Date.now(), userId: interaction.user.id, guildId: interaction.guildId, channelId: interaction.channelId, partyKey, durationMs: duration, ign });
+            pendingTimers.set(draftId, { createdAt: Date.now(), userId: interaction.user.id, guildId: interaction.guildId, channelId: interaction.channelId, partyKey, durationMs: duration, ign, dropperIsCreator: !interaction.fields.getTextInputValue('ign').trim() });
             return interaction.reply({ flags: 64, content: `⏱️ **${PARTY_INFO[partyKey]?.name || 'EC Party'}** timer ready for **${ign}**.\n\nWould you like me to mention the dropper when the timer reaches zero?\n\n👤 The person creating the timer will **always** be mentioned.\n💡 If you left the dropper IGN blank, I will use you as the dropper.`, components: [timerMentionChoiceRow(draftId)] });
         }
         if (id === 'tufc_modal_dorm_upgrade') {
