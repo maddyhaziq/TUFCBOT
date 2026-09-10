@@ -901,6 +901,9 @@ async function handleHubTimerMentionSelect(interaction) {
     if (draft.channelId !== interaction.channelId) { await interaction.reply({ flags: 64, content: '❌ This timer belongs to a different channel.' }); return true; }
     const mentionDropper = interaction.values[0] === 'yes';
     pendingTimers.delete(draftId);
+    // Acknowledge the select immediately so slower Google Sheets lookups or
+    // timer creation cannot hit Discord's interaction timeout.
+    await interaction.deferUpdate();
     try {
         const dropperDiscordId = mentionDropper ? (draft.dropperIsCreator ? interaction.user.id : await findDiscordIdForIgn(draft.ign)) : null;
         const timer = await createTimer({ partyKey: draft.partyKey, durationMs: draft.durationMs, ign: draft.ign, channel: interaction.channel, creatorId: interaction.user.id, dropperDiscordId, mentionDropper });
@@ -910,10 +913,10 @@ async function handleHubTimerMentionSelect(interaction) {
         const content = `⏱️ **${timer.emoji} ${timer.partyName}** timer set for **${timer.ign}**.\n👤 Creator: <@${interaction.user.id}>\n${dropperStatus}\n⏱️ **${formatDuration(draft.durationMs)}** remaining — drop at <t:${Math.floor(timer.endAt / 1000)}:F> (<t:${Math.floor(timer.endAt / 1000)}:R>).`;
         const allowedUsers = [interaction.user.id];
         if (mentionDropper && dropperDiscordId) allowedUsers.push(dropperDiscordId);
-        return interaction.update({ content, components: [], allowedMentions: { users: allowedUsers } });
+        return interaction.editReply({ content, components: [], allowedMentions: { users: allowedUsers } });
     } catch (error) {
         console.error('[EC TIMER] Failed to create timer:', error);
-        return interaction.update({ content: '❌ I could not create the EC timer. Please try again.', components: [] });
+        return interaction.editReply({ content: '❌ I could not create the EC timer. Please try again.', components: [] });
     }
 }
 
