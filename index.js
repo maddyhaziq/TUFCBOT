@@ -238,7 +238,12 @@ function daysRemaining(endDate) {
 
 
 client.on('interactionCreate', async interaction => {
-
+    
+    // Public Hub buttons
+    if (interaction.customId.startsWith('tufc_public_')) {
+        await handlePublicButton(interaction);
+        return;
+    }
     // Member Hub buttons and forms
     if (interaction.isButton()) {
         try {
