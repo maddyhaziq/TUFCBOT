@@ -42,6 +42,53 @@ const ANNOUNCEMENT_CHANNEL_ID = ANNOUNCEMENT_CHANNEL_IDS[0];
 const pendingAnnouncements = new Map();
 const ANNOUNCEMENT_DRAFT_TTL_MS = 10 * 60 * 1000;
 
+const pendingTimers = new Map();
+const TIMER_DRAFT_TTL_MS = 10 * 60 * 1000;
+
+function createTimerDraftId(userId) {
+    return `${userId}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function cleanupTimerDrafts() {
+    const cutoff = Date.now() - TIMER_DRAFT_TTL_MS;
+    for (const [id, draft] of pendingTimers) {
+        if (draft.createdAt < cutoff) pendingTimers.delete(id);
+    }
+}
+
+function timerMentionChoiceRow(draftId) {
+    return new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+            .setCustomId(`tufc_timer_mention_dropper:${draftId}`)
+            .setPlaceholder('Mention the EC dropper?')
+            .setMinValues(1)
+            .setMaxValues(1)
+            .addOptions(
+                { label: 'Yes — mention the dropper', value: 'yes', emoji: '🔔', description: 'Ping the linked Discord account when the timer ends.' },
+                { label: 'No — do not mention the dropper', value: 'no', emoji: '🔕', description: 'Only mention the person who created the timer.' },
+            )
+    );
+}
+
+async function findDiscordIdForIgn(ign) {
+    try {
+        const rows = await getMembers();
+        if (!rows.length) return null;
+        const headers = rows[0] || [];
+        const ignIndex = headers.findIndex(h => String(h || '').trim().toLowerCase() === 'ign');
+        const discordIndex = headers.findIndex(h => ['discord id', 'discord user id', 'discord_id'].includes(String(h || '').trim().toLowerCase()));
+        if (ignIndex === -1 || discordIndex === -1) return null;
+        const wanted = String(ign || '').trim().toLowerCase();
+        const row = rows.slice(1).find(r => String(r[ignIndex] || '').trim().toLowerCase() === wanted);
+        const discordId = String(row?.[discordIndex] || '').trim();
+        return /^\d{17,20}$/.test(discordId) ? discordId : null;
+    } catch (error) {
+        console.error('[EC TIMER] Could not look up dropper Discord ID:', error);
+        return null;
+    }
+}
+
+
 function createAnnouncementDraftId(userId) {
     return `${userId}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -823,7 +870,36 @@ function findRole(guild, value) {
     }) || null;
 }
 
+
+async function handleHubTimerMentionSelect(interaction) {
+    const prefix = 'tufc_timer_mention_dropper:';
+    if (!interaction.isStringSelectMenu() || !interaction.customId.startsWith(prefix)) return false;
+    cleanupTimerDrafts();
+    const draftId = interaction.customId.slice(prefix.length);
+    const draft = pendingTimers.get(draftId);
+    if (!draft) { await interaction.reply({ flags: 64, content: '❌ This EC timer setup has expired. Please start the timer again.' }); return true; }
+    if (draft.userId !== interaction.user.id) { await interaction.reply({ flags: 64, content: '❌ Only the person who started this timer can choose the dropper mention option.' }); return true; }
+    if (draft.channelId !== interaction.channelId) { await interaction.reply({ flags: 64, content: '❌ This timer belongs to a different channel.' }); return true; }
+    const mentionDropper = interaction.values[0] === 'yes';
+    pendingTimers.delete(draftId);
+    try {
+        const dropperDiscordId = mentionDropper ? await findDiscordIdForIgn(draft.ign) : null;
+        const timer = await createTimer({ partyKey: draft.partyKey, durationMs: draft.durationMs, ign: draft.ign, channel: interaction.channel, creatorId: interaction.user.id, dropperDiscordId, mentionDropper });
+        let dropperStatus = '🔕 Dropper mention: **No**';
+        if (mentionDropper && dropperDiscordId) dropperStatus = `🔔 Dropper mention: <@${dropperDiscordId}>`;
+        if (mentionDropper && !dropperDiscordId) dropperStatus = '⚠️ Dropper mention: **Yes**, but no linked Discord account was found for that IGN.';
+        const content = `⏱️ **${timer.emoji} ${timer.partyName}** timer set for **${timer.ign}**.\n👤 Creator: <@${interaction.user.id}>\n${dropperStatus}\n⏱️ **${formatDuration(draft.durationMs)}** remaining — drop at <t:${Math.floor(timer.endAt / 1000)}:F> (<t:${Math.floor(timer.endAt / 1000)}:R>).`;
+        const allowedUsers = [interaction.user.id];
+        if (mentionDropper && dropperDiscordId) allowedUsers.push(dropperDiscordId);
+        return interaction.update({ content, components: [], allowedMentions: { users: allowedUsers } });
+    } catch (error) {
+        console.error('[EC TIMER] Failed to create timer:', error);
+        return interaction.update({ content: '❌ I could not create the EC timer. Please try again.', components: [] });
+    }
+}
+
 async function handleHubSelectMenu(interaction, client) {
+    if (await handleHubTimerMentionSelect(interaction)) return true;
     if (!interaction.isAnySelectMenu()) return false;
     const id = interaction.customId;
     if (!id.startsWith('tufc_')) return false;
@@ -1302,10 +1378,16 @@ async function handleHubModal(interaction, client) {
         }
         if (id === 'tufc_modal_gp_remove') { const ign = interaction.fields.getTextInputValue('ign').trim(); const r = await removeGoldPass(ign); return interaction.reply({ flags: 64, content: r.success ? `🗑️ Gold Pass removed for **${ign}**.` : `❌ **${ign}** was not found.` }); }
         if (id.startsWith('tufc_modal_timer:')) {
-            const partyKey = id.split(':')[1], durationInput = interaction.fields.getTextInputValue('duration'), ign = interaction.fields.getTextInputValue('ign').trim();
-            const duration = parseDuration(durationInput); if (!duration) return interaction.reply({ flags: 64, content: '❌ Invalid countdown. Use `10m`, `1h 30m`, `01:30`, or `01:30:00`.' });
-            const timer = await createTimer({ partyKey, durationMs: duration, ign, channel: interaction.channel });
-            return interaction.reply({ flags: 64, content: `✅ ${timer.emoji} **${timer.partyName}** timer set for **${timer.ign}**.\n⏱️ **${formatDuration(duration)}** remaining — drop at <t:${Math.floor(timer.endAt / 1000)}:F> (<t:${Math.floor(timer.endAt / 1000)}:R>).` });
+            cleanupTimerDrafts();
+            const partyKey = id.split(':')[1];
+            const durationInput = interaction.fields.getTextInputValue('duration').trim();
+            const ign = interaction.fields.getTextInputValue('ign').trim();
+            const duration = parseDuration(durationInput);
+            if (!duration) return interaction.reply({ flags: 64, content: '❌ Invalid countdown. Use `10m`, `1h 30m`, `01:30`, or `01:30:00`.' });
+            if (!ign) return interaction.reply({ flags: 64, content: '❌ EC Dropper IGN cannot be empty.' });
+            const draftId = createTimerDraftId(interaction.user.id);
+            pendingTimers.set(draftId, { createdAt: Date.now(), userId: interaction.user.id, guildId: interaction.guildId, channelId: interaction.channelId, partyKey, durationMs: duration, ign });
+            return interaction.reply({ flags: 64, content: `⏱️ **${PARTY_INFO[partyKey]?.name || 'EC Party'}** timer ready for **${ign}**.\n\nWould you like me to mention the dropper when the timer reaches zero?\n\n👤 The person creating the timer will **always** be mentioned.`, components: [timerMentionChoiceRow(draftId)] });
         }
         if (id === 'tufc_modal_dorm_upgrade') {
             const result = solveDormUpgrade({
