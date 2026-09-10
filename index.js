@@ -14,7 +14,19 @@ const {
 
 const { getMembers, updateGoldPass, markGoldPassNotified } = require('./googlesheets');
 const { checkPOTD, startPOTDMonitor, loadState, saveState } = require('./potdmonitor');
-const { buildHubPayload, handleHubButton, handleHubModal, handleHubSelectMenu, isManagementAuthorized } = require('./hub');
+const {
+    buildHubPayload,
+    handleHubButton,
+    handleHubModal,
+    handleHubSelectMenu,
+    isManagementAuthorized
+} = require('./hub');
+
+const {
+    buildPublicHubPayload,
+    handlePublicButton,
+    handlePublicModal
+} = require('./publichub');
 const { startTimers } = require('./timers');
 const { startEventMonitor } = require('./eventmonitor');
 const { startDashboard } = require('./dashboard/server');
