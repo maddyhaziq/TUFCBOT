@@ -347,7 +347,7 @@ client.on('interactionCreate', async interaction => {
             // This prevents Discord's \"application did not respond\" message if
             // embed/button construction takes longer than expected or throws.
             await interaction.deferReply();
-            await interaction.editReply(buildHubPayload());
+            await interaction.editReply(await buildHubPayload());
         } catch (error) {
             console.error('Member Hub command error:', error);
             if (interaction.deferred || interaction.replied) {
