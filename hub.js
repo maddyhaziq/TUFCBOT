@@ -89,6 +89,25 @@ async function findDiscordIdForIgn(ign) {
 }
 
 
+async function findIgnForDiscordId(discordId) {
+    try {
+        const rows = await getMembers();
+        if (!rows.length) return null;
+        const headers = rows[0] || [];
+        const ignIndex = headers.findIndex(h => String(h || '').trim().toLowerCase() === 'ign');
+        const discordIndex = headers.findIndex(h => ['discord id', 'discord user id', 'discord_id'].includes(String(h || '').trim().toLowerCase()));
+        if (ignIndex === -1 || discordIndex === -1) return null;
+        const wanted = String(discordId || '').trim();
+        const row = rows.slice(1).find(r => String(r[discordIndex] || '').trim() === wanted);
+        const ign = String(row?.[ignIndex] || '').trim();
+        return ign || null;
+    } catch (error) {
+        console.error('[EC TIMER] Could not look up creator IGN:', error);
+        return null;
+    }
+}
+
+
 function createAnnouncementDraftId(userId) {
     return `${userId}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -743,7 +762,7 @@ async function handleHubButton(interaction, client) {
         if (PARTY_INFO[partyKey]) {
             await interaction.showModal(modal(`tufc_modal_timer:${partyKey}`, `${PARTY_INFO[partyKey].emoji} ${PARTY_INFO[partyKey].name}`, [
                 { id: 'duration', label: 'Countdown', placeholder: 'Examples: 10m, 1h 30m, 01:30:00' },
-                { id: 'ign', label: 'EC Dropper IGN', placeholder: 'IGN of the person dropping the EC item' },
+                { id: 'ign', label: 'EC Dropper IGN (optional)', placeholder: 'Leave blank if you are the EC dropper', required: false },
             ]));
             return true;
         }
@@ -1381,13 +1400,15 @@ async function handleHubModal(interaction, client) {
             cleanupTimerDrafts();
             const partyKey = id.split(':')[1];
             const durationInput = interaction.fields.getTextInputValue('duration').trim();
-            const ign = interaction.fields.getTextInputValue('ign').trim();
+            let ign = interaction.fields.getTextInputValue('ign').trim();
             const duration = parseDuration(durationInput);
             if (!duration) return interaction.reply({ flags: 64, content: '❌ Invalid countdown. Use `10m`, `1h 30m`, `01:30`, or `01:30:00`.' });
-            if (!ign) return interaction.reply({ flags: 64, content: '❌ EC Dropper IGN cannot be empty.' });
+            if (!ign) {
+                ign = await findIgnForDiscordId(interaction.user.id) || interaction.member?.displayName || interaction.user.globalName || interaction.user.username;
+            }
             const draftId = createTimerDraftId(interaction.user.id);
             pendingTimers.set(draftId, { createdAt: Date.now(), userId: interaction.user.id, guildId: interaction.guildId, channelId: interaction.channelId, partyKey, durationMs: duration, ign });
-            return interaction.reply({ flags: 64, content: `⏱️ **${PARTY_INFO[partyKey]?.name || 'EC Party'}** timer ready for **${ign}**.\n\nWould you like me to mention the dropper when the timer reaches zero?\n\n👤 The person creating the timer will **always** be mentioned.`, components: [timerMentionChoiceRow(draftId)] });
+            return interaction.reply({ flags: 64, content: `⏱️ **${PARTY_INFO[partyKey]?.name || 'EC Party'}** timer ready for **${ign}**.\n\nWould you like me to mention the dropper when the timer reaches zero?\n\n👤 The person creating the timer will **always** be mentioned.\n💡 If you left the dropper IGN blank, I will use you as the dropper.`, components: [timerMentionChoiceRow(draftId)] });
         }
         if (id === 'tufc_modal_dorm_upgrade') {
             const result = solveDormUpgrade({
