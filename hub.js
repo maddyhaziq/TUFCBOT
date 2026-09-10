@@ -354,8 +354,10 @@ async function showLBHMenu(interaction) {
             new ButtonBuilder().setCustomId('tufc_lbh_15').setLabel('@LBH 1.5 Bar').setEmoji('📣').setStyle(ButtonStyle.Primary),
             new ButtonBuilder().setCustomId('tufc_lbh_1').setLabel('@LBH 1.0 Bar').setEmoji('📣').setStyle(ButtonStyle.Primary),
             new ButtonBuilder().setCustomId('tufc_lbh_05').setLabel('@LBH 0.5 Bar').setEmoji('📣').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('tufc_lbh_pro_test_initiated').setLabel('Pro Test Initiated').setEmoji('🧪').setStyle(ButtonStyle.Primary),
         ),
         new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('tufc_lbh_pro_test_lbh').setLabel('Pro Test LBH').setEmoji('🧪').setStyle(ButtonStyle.Danger),
             new ButtonBuilder().setCustomId('tufc_lbh_ppotd').setLabel('@LBH PPOTD').setEmoji('🔔').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('tufc_lbh_potd').setLabel('@LBH POTD').setEmoji('🔔').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('tufc_lbh_done').setLabel('Party Finished').setEmoji('✅').setStyle(ButtonStyle.Success),
@@ -774,7 +776,7 @@ async function handleHubButton(interaction, client) {
         }
     }
 
-    const lbhLabels = { tufc_lbh_2: '2.0 Bar', tufc_lbh_15: '1.5 Bar', tufc_lbh_1: '1.0 Bar', tufc_lbh_05: '0.5 Bar', tufc_lbh_ppotd: 'PPOTD', tufc_lbh_potd: 'POTD', tufc_lbh_done: 'Party is finished' };
+    const lbhLabels = { tufc_lbh_2: '2.0 Bar', tufc_lbh_15: '1.5 Bar', tufc_lbh_1: '1.0 Bar', tufc_lbh_05: '0.5 Bar', tufc_lbh_pro_test_initiated: 'Pro Test Initiated', tufc_lbh_pro_test_lbh: 'Pro Test LBH', tufc_lbh_ppotd: 'PPOTD', tufc_lbh_potd: 'POTD', tufc_lbh_done: 'Party is finished' };
     if (lbhLabels[id]) {
         const role = interaction.guild?.roles.cache.get(process.env.LBH_ROLE_ID) || interaction.guild?.roles.cache.find(r => r.name.toLowerCase() === 'lbh');
         if (!role) { await interaction.reply({ flags: 64, content: '❌ I could not find the **LBH** role. Set `LBH_ROLE_ID` in your .env or name the role exactly `LBH`.' }); return true; }
