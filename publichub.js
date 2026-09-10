@@ -59,10 +59,10 @@ async function buildPublicHubPayload() {
     return {
         embeds: [
             new EmbedBuilder()
-                .setTitle('🌐 TUFC PUBLIC HUB')
+                .setTitle('🌐 THE UNFILTERED CORNER • PUBLIC HUB')
                 .setDescription(
-                    'Welcome to **The United Football Club**.\n\n' +
-                    'Public information and useful TUFC tools.'
+                    'Welcome to **The Unfiltered Corner**.\n\n' +
+                    'Come as you are, stay for the chaos.'
                 )
                 .addFields(
                     {
@@ -90,7 +90,7 @@ async function buildPublicHubPayload() {
                         inline: false
                     }
                 )
-                .setFooter({ text: 'TUFCBOT • Public Hub' })
+                .setFooter({ text: 'The Unfiltered Corner • Public Hub' })
                 .setTimestamp()
         ],
 
