@@ -28,7 +28,7 @@ const SPREADSHEET_ID = '1tCmkiscg08zPgr94X1w4Og8MYd158Hev8DtKS6QaCy4';
 const SHEET_NAME = 'TUFC -MEMBERS';
 const DATA_START_ROW = 5;
 const DATA_START_COLUMN = 2; // B
-const DATA_END_COLUMN = 15; // O
+const DATA_END_COLUMN = 15; // O (DISCORD ID is now in O after VALUE was inserted beside STAT)
 
 function pad2(value) { return String(value).padStart(2, '0'); }
 
@@ -229,7 +229,7 @@ async function addMember(ign) {
 
     await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
-        range: `'${SHEET_NAME}'!B:O`,
+        range: `'${SHEET_NAME}'!B:P`,
         valueInputOption: 'USER_ENTERED',
         insertDataOption: 'INSERT_ROWS',
         requestBody: { values: [values] },
@@ -363,19 +363,27 @@ async function updateMemberStats(ign, statsValue, unit = 'MCS') {
     const headers = rows[0];
     const ignIndex = findHeader(headers, ['IGN']);
     const statIndex = findHeader(headers, ['STAT', 'STATS', 'COMBINED STATS']);
+    const unitIndex = findHeader(headers, ['VALUE', 'UNIT', 'STAT VALUE', 'STAT UNIT']);
     if (ignIndex === -1 || statIndex === -1) throw new Error('IGN or STAT column could not be found.');
+    if (unitIndex === -1) throw new Error('VALUE column could not be found. Please add a VALUE column beside STAT.');
     const memberRowIndex = rows.findIndex((row, index) => index > 0 && normalize(row[ignIndex]) === normalize(ign));
     if (memberRowIndex === -1) return { success: false, reason: 'MEMBER_NOT_FOUND' };
     const sheetRow = DATA_START_ROW + memberRowIndex - 1;
     const statColumn = columnToLetter(statIndex + DATA_START_COLUMN);
-    const value = `${String(statsValue).trim()} ${String(unit).toUpperCase()}`;
-    await sheets.spreadsheets.values.update({
+    const unitColumn = columnToLetter(unitIndex + DATA_START_COLUMN);
+    const numericValue = String(statsValue).trim();
+    const statUnit = String(unit).toUpperCase();
+    await sheets.spreadsheets.values.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
-        range: `'${SHEET_NAME}'!${statColumn}${sheetRow}`,
-        valueInputOption: 'USER_ENTERED',
-        requestBody: { values: [[value]] },
+        requestBody: {
+            valueInputOption: 'USER_ENTERED',
+            data: [
+                { range: `'${SHEET_NAME}'!${statColumn}${sheetRow}`, values: [[numericValue]] },
+                { range: `'${SHEET_NAME}'!${unitColumn}${sheetRow}`, values: [[statUnit]] },
+            ],
+        },
     });
-    return { success: true, ign, statsValue: String(statsValue).trim(), unit: String(unit).toUpperCase(), row: sheetRow };
+    return { success: true, ign, statsValue: numericValue, unit: statUnit, row: sheetRow };
 }
 
 module.exports = {
