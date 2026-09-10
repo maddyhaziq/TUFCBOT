@@ -205,7 +205,6 @@ async function handlePublicModal(interaction) {
     if (!interaction.customId.startsWith('tufc_public_')) return false;
     if (!publicAllowed(interaction)) { await accessReply(interaction); return true; }
 
-    if (interaction.customId === 'tufc_public_price_modal') {
     if (interaction.customId === 'tufc_public_dorm_upgrade_modal') {
         const stats = interaction.fields.getTextInputValue('stats');
         const cash = interaction.fields.getTextInputValue('cash');
@@ -272,6 +271,7 @@ async function handlePublicModal(interaction) {
             embeds: [embed]
         });
     }
+    if (interaction.customId === 'tufc_public_price_modal') {
         const query = interaction.fields.getTextInputValue('query').trim();
         const results = await searchDatabase(query, ['PIMD_PRICES']);
         const price = results[0]?.record;
