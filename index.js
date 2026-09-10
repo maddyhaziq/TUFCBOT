@@ -141,6 +141,8 @@ const commands = [
     new SlashCommandBuilder()
         .setName('publichub')
         .setDescription('Post the TUFC Public Hub'),
+
+    new SlashCommandBuilder()
         .setName('potd')
         .setDescription('Check and monitor Party in my Dorm Party of the Day')
         .addSubcommand(subcommand =>
@@ -242,9 +244,10 @@ function daysRemaining(endDate) {
 client.on('interactionCreate', async interaction => {
     
     // Public Hub buttons
-    if (interaction.customId.startsWith('tufc_public_')) {
-        await handlePublicButton(interaction);
-        return;
+if (interaction.isButton() && interaction.customId.startsWith('tufc_public_')) {
+    await handlePublicButton(interaction);
+    return;
+}
     }
     // Member Hub buttons and forms
     if (interaction.isButton()) {
@@ -654,7 +657,35 @@ client.on('interactionCreate', async interaction => {
         return;
     }
 
+// =========================
+// /publichub
+// =========================
 
+if (interaction.commandName === 'publichub') {
+    try {
+        await interaction.deferReply();
+
+        await interaction.editReply(
+            await buildPublicHubPayload()
+        );
+
+    } catch (error) {
+        console.error('Public Hub command error:', error);
+
+        if (interaction.deferred || interaction.replied) {
+            await interaction.editReply(
+                '❌ I could not create the Public Hub. Check the bot console for the error.'
+            );
+        } else {
+            await interaction.reply({
+                content: '❌ I could not create the Public Hub.',
+                flags: 64
+            });
+        }
+    }
+
+    return;
+}
     // =========================
     // /potd
     // =========================
