@@ -248,7 +248,7 @@ if (interaction.isButton() && interaction.customId.startsWith('tufc_public_')) {
     await handlePublicButton(interaction);
     return;
 }
-    }
+
     // Member Hub buttons and forms
     if (interaction.isButton()) {
         try {
