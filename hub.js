@@ -217,7 +217,8 @@ function findMemberRows(rows) {
 function memberEmbed(member) {
     return new EmbedBuilder().setTitle('👤 Member Information').setDescription(`Information for **${member.IGN || 'Unknown'}**`).addFields(
         { name: 'IGN', value: sheetValue(member.IGN), inline: true }, { name: 'Role', value: sheetValue(member.ROLE), inline: true },
-        { name: 'Club Tag', value: sheetValue(member['CLUB TAG']), inline: true }, { name: 'STAT', value: sheetValue(member.STAT) },
+        { name: 'Club Tag', value: sheetValue(member['CLUB TAG']), inline: true },
+        { name: '📊 Stats', value: `${sheetValue(member.STAT)} ${sheetValue(member.VALUE || member.UNIT || member['STAT VALUE'] || member['STAT UNIT'])}`.replace(/\s+—$/u, ''), inline: true },
         { name: 'GP', value: sheetValue(member.GP), inline: true }, { name: 'Status', value: sheetValue(member.STATUS), inline: true },
         { name: 'GP Start Date', value: sheetValue(member['GP START DATE']), inline: true }, { name: 'GP End Date', value: sheetValue(member['GP END DATE']), inline: true },
         { name: 'Remarks', value: sheetValue(member.REMARKS) },
@@ -466,7 +467,8 @@ function findMemberRows(rows) {
 function memberEmbed(member) {
     return new EmbedBuilder().setTitle('👤 Member Information').setDescription(`Information for **${member.IGN || 'Unknown'}**`).addFields(
         { name: 'IGN', value: sheetValue(member.IGN), inline: true }, { name: 'Role', value: sheetValue(member.ROLE), inline: true },
-        { name: 'Club Tag', value: sheetValue(member['CLUB TAG']), inline: true }, { name: 'STAT', value: sheetValue(member.STAT) },
+        { name: 'Club Tag', value: sheetValue(member['CLUB TAG']), inline: true },
+        { name: '📊 Stats', value: `${sheetValue(member.STAT)} ${sheetValue(member.VALUE || member.UNIT || member['STAT VALUE'] || member['STAT UNIT'])}`.replace(/\s+—$/u, ''), inline: true },
         { name: 'GP', value: sheetValue(member.GP), inline: true }, { name: 'Status', value: sheetValue(member.STATUS), inline: true },
         { name: 'GP Start Date', value: sheetValue(member['GP START DATE']), inline: true }, { name: 'GP End Date', value: sheetValue(member['GP END DATE']), inline: true },
         { name: 'Remarks', value: sheetValue(member.REMARKS) },
