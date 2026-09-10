@@ -14,7 +14,7 @@ const {
 
 const { getMembers, updateGoldPass, markGoldPassNotified } = require('./googlesheets');
 const { checkPOTD, startPOTDMonitor, loadState, saveState } = require('./potdmonitor');
-const { buildHubPayload, handleHubButton, handleHubModal, handleHubSelectMenu, isManagementAuthorized, saveHubMessageState, refreshSavedHub, startHubAutoRefresh } = require('./hub');
+const { buildHubPayload, handleHubButton, handleHubModal, handleHubSelectMenu, isManagementAuthorized } = require('./hub');
 const { startTimers } = require('./timers');
 const { startEventMonitor } = require('./eventmonitor');
 const { startDashboard } = require('./dashboard/server');
@@ -96,6 +96,35 @@ const commands = [
     new SlashCommandBuilder()
         .setName('hub')
         .setDescription('Post the TUFCBOT Member Hub panel (Admin only)'),
+
+    new SlashCommandBuilder()
+        .setName('announcement')
+        .setDescription('Create and post a curated TUFC announcement')
+        .addStringOption(option =>
+            option
+                .setName('title')
+                .setDescription('Announcement title')
+                .setRequired(true)
+        )
+        .addStringOption(option =>
+            option
+                .setName('details')
+                .setDescription('Announcement details')
+                .setRequired(true)
+        )
+        .addChannelOption(option =>
+            option
+                .setName('channel')
+                .setDescription('Channel where the announcement should be posted')
+                .addChannelTypes(0, 5)
+                .setRequired(true)
+        )
+        .addAttachmentOption(option =>
+            option
+                .setName('photo')
+                .setDescription('Optional announcement photo')
+                .setRequired(false)
+        ),
 
     new SlashCommandBuilder()
         .setName('potd')
@@ -242,6 +271,66 @@ client.on('interactionCreate', async interaction => {
 
 
     // =========================
+    // /announcement
+    // =========================
+
+    if (interaction.commandName === 'announcement') {
+        if (!(await isManagementAuthorized(interaction))) {
+            return await interaction.reply({
+                content: '❌ You need one of the TUFC management roles to use this tool.',
+                flags: 64
+            });
+        }
+
+        const title = interaction.options.getString('title', true).trim();
+        const details = interaction.options.getString('details', true).trim();
+        const channel = interaction.options.getChannel('channel', true);
+        const photo = interaction.options.getAttachment('photo');
+
+        if (!title || !details) {
+            return await interaction.reply({ content: '❌ Title and details are required.', flags: 64 });
+        }
+        if (title.length > 256) {
+            return await interaction.reply({ content: '❌ The title is too long (maximum 256 characters).', flags: 64 });
+        }
+        if (details.length > 4096) {
+            return await interaction.reply({ content: '❌ The details are too long (maximum 4096 characters).', flags: 64 });
+        }
+        if (!channel.isTextBased?.() || ![0, 5].includes(channel.type)) {
+            return await interaction.reply({ content: '❌ Please choose a normal text or announcement channel.', flags: 64 });
+        }
+        if (photo && !(String(photo.contentType || '').toLowerCase().startsWith('image/'))) {
+            return await interaction.reply({ content: '❌ The uploaded file must be an image.', flags: 64 });
+        }
+
+        const permissions = channel.permissionsFor(interaction.guild.members.me);
+        if (!permissions?.has('ViewChannel') || !permissions?.has('SendMessages') || !permissions?.has('EmbedLinks')) {
+            return await interaction.reply({
+                content: `❌ I cannot post an announcement in <#${channel.id}>. I need **View Channel**, **Send Messages**, and **Embed Links** there.`,
+                flags: 64
+            });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+        try {
+            const embed = new EmbedBuilder()
+                .setColor(0x5865F2)
+                .setTitle(`📢 ${title}`)
+                .setDescription(details)
+                .setFooter({ text: `TUFCBOT • Posted by ${interaction.member?.displayName || interaction.user.username}` })
+                .setTimestamp();
+
+            if (photo) embed.setImage(photo.url);
+
+            await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+            return await interaction.editReply(`✅ Announcement sent to <#${channel.id}>.`);
+        } catch (error) {
+            console.error('Announcement command error:', error);
+            return await interaction.editReply('❌ I could not post the announcement. Check that the bot can access and send messages in the selected channel.');
+        }
+    }
+
+    // =========================
     // /hub
     // =========================
 
@@ -254,16 +343,11 @@ client.on('interactionCreate', async interaction => {
                 });
             }
 
-            // Keep one persistent Hub message instead of creating duplicates.
-            await interaction.deferReply({ flags: 64 });
-            const refreshed = await refreshSavedHub(client);
-            if (refreshed) {
-                await interaction.editReply('✅ TUFCBOT Member Hub refreshed.');
-            } else {
-                const message = await interaction.channel.send(await buildHubPayload());
-                saveHubMessageState(interaction.channelId, message.id);
-                await interaction.editReply('✅ TUFCBOT Member Hub created.');
-            }
+            // Acknowledge the interaction immediately, then edit it with the panel.
+            // This prevents Discord's \"application did not respond\" message if
+            // embed/button construction takes longer than expected or throws.
+            await interaction.deferReply();
+            await interaction.editReply(buildHubPayload());
         } catch (error) {
             console.error('Member Hub command error:', error);
             if (interaction.deferred || interaction.replied) {
@@ -878,7 +962,6 @@ async function checkGoldPassExpiries() {
 }
 
 client.once('clientReady', async () => {
-    startHubAutoRefresh(client);
     console.log('🟡 Starting Gold Pass expiry checker...');
     await checkGoldPassExpiries();
     setInterval(checkGoldPassExpiries, GOLD_PASS_CHECK_INTERVAL);
