@@ -78,6 +78,9 @@ function writeState() {
       channelId: t.channelId,
       endAt: t.endAt,
       createdAt: t.createdAt,
+      creatorId: t.creatorId || null,
+      dropperDiscordId: t.dropperDiscordId || null,
+      mentionDropper: Boolean(t.mentionDropper),
     })), null, 2));
   } catch (err) {
     console.error('Failed to save EC timer state:', err);
@@ -105,9 +108,16 @@ async function fireTimer(timer) {
       return;
     }
 
+    const creatorMention = /^\d{17,20}$/.test(String(timer.creatorId || '')) ? `<@${timer.creatorId}>` : null;
+    const dropperMention = timer.mentionDropper && /^\d{17,20}$/.test(String(timer.dropperDiscordId || ''))
+      ? `<@${timer.dropperDiscordId}>`
+      : null;
+    const mentions = [creatorMention, dropperMention].filter(Boolean);
+    const mentionText = mentions.length ? `\n👤 **Timer Creator:** ${creatorMention || 'Unknown'}${dropperMention ? `\n🎯 **Dropper:** ${dropperMention}` : `\n🎯 **Dropper:** ${timer.ign}`}` : `\n🎯 **Dropper:** ${timer.ign}`;
+
     await channel.send({
-      content: `🔔 ${timer.emoji} **${timer.partyName}** — **${timer.ign}** — the EC drop timer is up!`,
-      allowedMentions: { parse: [] },
+      content: `🚨 ${timer.emoji} **${timer.partyName}** — **EC DROP NOW!**${mentionText}`,
+      allowedMentions: mentions.length ? { users: [timer.creatorId, ...(dropperMention ? [timer.dropperDiscordId] : [])] } : { parse: [] },
     });
   } catch (err) {
     console.error(`Failed to send EC timer notification for ${timer.id}:`, err);
@@ -127,7 +137,7 @@ function listTimers(channelId) {
     .map(({ timeout, ...timer }) => timer);
 }
 
-async function createTimer({ partyKey, durationMs, ign, channel }) {
+async function createTimer({ partyKey, durationMs, ign, channel, creatorId = null, dropperDiscordId = null, mentionDropper = false }) {
   const info = PARTY_INFO[partyKey];
   if (!info) throw new Error(`Unknown party timer: ${partyKey}`);
   if (!Number.isFinite(durationMs) || durationMs <= 0) throw new Error('Invalid timer duration.');
@@ -141,6 +151,9 @@ async function createTimer({ partyKey, durationMs, ign, channel }) {
     channelId: channel?.id,
     endAt: Date.now() + durationMs,
     createdAt: Date.now(),
+    creatorId: String(creatorId || '').trim() || null,
+    dropperDiscordId: String(dropperDiscordId || '').trim() || null,
+    mentionDropper: Boolean(mentionDropper),
     timeout: null,
   };
 
