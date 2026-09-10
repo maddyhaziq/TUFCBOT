@@ -11,6 +11,7 @@ const PARTY_INFO = {
 
 const activeTimers = new Map();
 let discordClient = null;
+const EC_TIMER_NOTIFICATION_CHANNEL_ID = '1546431386116690020';
 
 function parseDuration(input) {
   if (input == null) return null;
@@ -101,10 +102,10 @@ async function fireTimer(timer) {
   writeState();
 
   try {
-    const channel = discordClient?.channels?.cache?.get(timer.channelId)
-      || await discordClient?.channels?.fetch(timer.channelId);
+    const channel = discordClient?.channels?.cache?.get(EC_TIMER_NOTIFICATION_CHANNEL_ID)
+      || await discordClient?.channels?.fetch(EC_TIMER_NOTIFICATION_CHANNEL_ID);
     if (!channel || typeof channel.send !== 'function') {
-      console.warn(`EC timer ${timer.id}: channel ${timer.channelId} could not be found.`);
+      console.warn(`EC timer ${timer.id}: notification channel ${EC_TIMER_NOTIFICATION_CHANNEL_ID} could not be found.`);
       return;
     }
 
