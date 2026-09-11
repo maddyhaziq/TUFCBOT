@@ -27,33 +27,97 @@ function accessReply(interaction) {
 async function buildPublicHubPayload() {
     const state = loadState();
 
-    let totalMembers = 0;
-    let activeMembers = 0;
+        let clubHealth = {
+        coreMembers: 0,
+        guests: 0,
+        totalMembers: 0,
+        capacities: {
+            core: 70,
+            guests: 29,
+            total: 99
+        }
+    };
 
     try {
         const rows = await getMembers();
 
         if (rows.length > 1) {
-            const headers = rows[0].map(h => String(h || '').trim().toUpperCase());
+            const headers = rows[0].map(h =>
+                String(h || '').trim().toUpperCase()
+            );
 
             const ignIndex = headers.indexOf('IGN');
-            const statusIndex = headers.indexOf('STATUS');
+            const roleIndex = headers.indexOf('ROLE');
 
             const members = rows.slice(1).filter(row => {
                 if (ignIndex === -1) return false;
                 return String(row[ignIndex] || '').trim() !== '';
             });
 
-            totalMembers = members.length;
+            const normalizeRole = value =>
+                String(value || '')
+                    .normalize('NFKC')
+                    .replace(/\s+/gu, ' ')
+                    .trim()
+                    .toLowerCase();
 
-            if (statusIndex !== -1) {
-                activeMembers = members.filter(row =>
-                    String(row[statusIndex] || '').trim().toLowerCase() === 'active'
-                ).length;
-            }
+            const ADMIN_ROLES = new Set([
+                'President 🐉',
+                'Vice-President 『♕』',
+                'The Executive『♗』',
+                'The Kicker 『♖』',
+                'The Party Jockey 『♘』'
+            ].map(normalizeRole));
+
+            const CLUB_MEMBER_ROLE =
+                normalizeRole('Club Members ˚˖𓍢ִ໋🦢˚');
+
+            const GUEST_ROLE =
+                normalizeRole('Guest 🦋');
+
+            const BANK_ROLE =
+                normalizeRole('BANK');
+
+            const roleOf = member =>
+                roleIndex === -1
+                    ? ''
+                    : normalizeRole(member[roleIndex]);
+
+            const admins = members.filter(member =>
+                ADMIN_ROLES.has(roleOf(member))
+            );
+
+            const clubMembers = members.filter(member =>
+                roleOf(member) === CLUB_MEMBER_ROLE
+            );
+
+            const guests = members.filter(member =>
+                roleOf(member) === GUEST_ROLE
+            );
+
+            const bank = members.filter(member =>
+                roleOf(member) === BANK_ROLE
+            );
+
+            const coreMembers = [
+                ...admins,
+                ...clubMembers,
+                ...bank
+            ];
+
+            clubHealth = {
+                coreMembers: coreMembers.length,
+                guests: guests.length,
+                totalMembers: coreMembers.length + guests.length,
+                capacities: {
+                    core: 70,
+                    guests: 29,
+                    total: 99
+                }
+            };
         }
     } catch (error) {
-        console.error('PublicHub member stats error:', error);
+        console.error('PublicHub Club Health error:', error);
     }
 
     return {
@@ -64,32 +128,33 @@ async function buildPublicHubPayload() {
                     'Welcome to **The Unfiltered Corner**.\n\n' +
                     'Come as you are, stay for the chaos.'
                 )
-                .addFields(
-                    {
-                        name: '📊 Club Stats',
-                        value:
-                            `👥 **Total Members:** ${totalMembers}\n` +
-                            `🟢 **Active Members:** ${activeMembers}`,
-                        inline: false
-                    },
-                    {
-                        name: '🎉 Party of the Day',
-                        value:
-                            `🎯 **POTD:** ${state?.potd || 'Not found yet'}\n` +
-                            `💎 **PPOTD:** ${state?.ppotd || 'Not found yet'}`,
-                        inline: false
-                    },
-                    {
-                        name: '🏗️ New Dorm Tower Upgrade',
-                        value: 'Use the calculator to find the best tower upgrade combination based on your stats, cash and opened dorms.',
-                        inline: false
-                    },
-                    {
-                        name: '🤝 Recruitment',
-                        value: 'Interested in joining TUFC?\nClick **Join TUFC** below.',
-                        inline: false
-                    }
-                )
+.addFields(
+    {
+        name: '🏥 Club Health',
+        value:
+            `👥 **Members + Admins:** ${clubHealth.coreMembers}/${clubHealth.capacities.core}\n` +
+            `🦋 **Guests:** ${clubHealth.guests}/${clubHealth.capacities.guests}\n` +
+            `📊 **Total:** ${clubHealth.totalMembers}/${clubHealth.capacities.total}`,
+        inline: false
+    },
+    {
+        name: '🎉 Party of the Day',
+        value:
+            `🎯 **POTD:** ${state?.potd || 'Not found yet'}\n` +
+            `💎 **PPOTD:** ${state?.ppotd || 'Not found yet'}`,
+        inline: false
+    },
+    {
+        name: '🏗️ New Dorm Tower Upgrade',
+        value: 'Use the calculator to find the best tower upgrade combination based on your stats, cash and opened dorms.',
+        inline: false
+    },
+    {
+        name: '🤝 Recruitment',
+        value: 'Interested in joining The Unfiltered Corner?\nClick **Join The Unfiltered Corner** below.',
+        inline: false
+    }
+)
                 .setFooter({ text: 'The Unfiltered Corner • Public Hub' })
                 .setTimestamp()
         ],
