@@ -145,12 +145,7 @@ async function buildPublicHubPayload() {
         inline: false
     },
     {
-        name: '🏗️ New Dorm Tower Upgrade',
-        value: 'Use the calculator to find the best tower upgrade combination based on your stats, cash and opened dorms.',
-        inline: false
-    },
-    {
-        name: '🤝 Recruitment',
+        name: '🤝 Invitation Link',
         value: 'Interested in joining The Unfiltered Corner?\nClick **Join The Unfiltered Corner** below.',
         inline: false
     }
@@ -174,10 +169,10 @@ async function buildPublicHubPayload() {
                     .setStyle(ButtonStyle.Secondary),
 
                 new ButtonBuilder()
-                    .setLabel('Join TUFC')
-                    .setEmoji('🤝')
-                    .setStyle(ButtonStyle.Link)
-                    .setURL('https://discord.gg/SzcT7aq8Uq')
+                    .setCustomId('tufc_public_recruitment')
+                    .setLabel('Join The Unfiltered Corner')
+                    .setEmoji('💌')
+                    .setStyle(ButtonStyle.Primary)
             )
         ]
     };
@@ -209,15 +204,27 @@ function sourceFooter(record) {
 function first(results, sheet) { return results.find(r => r.sheet === sheet)?.record || null; }
 
 async function handlePublicButton(interaction) {
-    const ids = [
+const ids = [
     'tufc_public_potd',
     'tufc_public_price',
     'tufc_public_item',
     'tufc_public_assistant',
-    'tufc_public_dorm_upgrade'
+    'tufc_public_dorm_upgrade',
+    'tufc_public_recruitment'
 ];
     if (!ids.includes(interaction.customId)) return false;
     if (!publicAllowed(interaction)) { await accessReply(interaction); return true; }
+    if (interaction.customId === 'tufc_public_recruitment') {
+    await interaction.reply({
+        flags: 64,
+        content:
+            '🤝 **The Unfiltered Corner — Server Invite**\n\n' +
+            'Copy and share this invite link:\n' +
+            'https://discord.gg/SzcT7aq8Uq'
+    });
+
+    return true;
+}
     if (interaction.customId === 'tufc_public_dorm_upgrade') {
     await interaction.showModal(
         new ModalBuilder()
