@@ -132,11 +132,35 @@ const commands = [
                 .setRequired(true)
         )
         .addAttachmentOption(option =>
-            option
-                .setName('photo')
-                .setDescription('Optional announcement photo')
-                .setRequired(false)
-        ),
+    option
+        .setName('photo1')
+        .setDescription('Optional announcement photo 1')
+        .setRequired(false)
+)
+.addAttachmentOption(option =>
+    option
+        .setName('photo2')
+        .setDescription('Optional announcement photo 2')
+        .setRequired(false)
+)
+.addAttachmentOption(option =>
+    option
+        .setName('photo3')
+        .setDescription('Optional announcement photo 3')
+        .setRequired(false)
+)
+.addAttachmentOption(option =>
+    option
+        .setName('photo4')
+        .setDescription('Optional announcement photo 4')
+        .setRequired(false)
+)
+.addAttachmentOption(option =>
+    option
+        .setName('photo5')
+        .setDescription('Optional announcement photo 5')
+        .setRequired(false)
+),
 
     new SlashCommandBuilder()
         .setName('publichub')
@@ -311,7 +335,13 @@ if (interaction.isButton() && interaction.customId.startsWith('tufc_public_')) {
         const title = interaction.options.getString('title', true).trim();
         const details = interaction.options.getString('details', true).trim();
         const channel = interaction.options.getChannel('channel', true);
-        const photo = interaction.options.getAttachment('photo');
+        const photos = [
+    interaction.options.getAttachment('photo1'),
+    interaction.options.getAttachment('photo2'),
+    interaction.options.getAttachment('photo3'),
+    interaction.options.getAttachment('photo4'),
+    interaction.options.getAttachment('photo5')
+].filter(Boolean);
 
         if (!title || !details) {
             return await interaction.reply({ content: '❌ Title and details are required.', flags: 64 });
@@ -325,9 +355,14 @@ if (interaction.isButton() && interaction.customId.startsWith('tufc_public_')) {
         if (!channel.isTextBased?.() || ![0, 5].includes(channel.type)) {
             return await interaction.reply({ content: '❌ Please choose a normal text or announcement channel.', flags: 64 });
         }
-        if (photo && !(String(photo.contentType || '').toLowerCase().startsWith('image/'))) {
-            return await interaction.reply({ content: '❌ The uploaded file must be an image.', flags: 64 });
-        }
+        for (const photo of photos) {
+        if (!(String(photo.contentType || '').toLowerCase().startsWith('image/'))) {
+        return await interaction.reply({
+            content: '❌ All uploaded files must be images.',
+            flags: 64
+        });
+    }
+}
 
         const permissions = channel.permissionsFor(interaction.guild.members.me);
         if (!permissions?.has('ViewChannel') || !permissions?.has('SendMessages') || !permissions?.has('EmbedLinks')) {
@@ -339,16 +374,36 @@ if (interaction.isButton() && interaction.customId.startsWith('tufc_public_')) {
 
         await interaction.deferReply({ flags: 64 });
         try {
-            const embed = new EmbedBuilder()
-                .setColor(0x5865F2)
-                .setTitle(`📢 ${title}`)
-                .setDescription(details)
-                .setFooter({ text: `TUFCBOT • Posted by ${interaction.member?.displayName || interaction.user.username}` })
-                .setTimestamp();
+            const embeds = [];
 
-            if (photo) embed.setImage(photo.url);
+const mainEmbed = new EmbedBuilder()
+    .setColor(0x5865F2)
+    .setTitle(`📢 ${title}`)
+    .setDescription(details)
+    .setFooter({
+        text: `TUFCBOT • Posted by ${interaction.member?.displayName || interaction.user.username}`
+    })
+    .setTimestamp();
 
-            await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+if (photos.length > 0) {
+    mainEmbed.setImage(photos[0].url);
+}
+
+embeds.push(mainEmbed);
+
+// Add any additional announcement images
+for (let i = 1; i < photos.length; i++) {
+    embeds.push(
+        new EmbedBuilder()
+            .setColor(0x5865F2)
+            .setImage(photos[i].url)
+    );
+}
+
+await channel.send({
+    embeds,
+    allowedMentions: { parse: [] }
+});
             return await interaction.editReply(`✅ Announcement sent to <#${channel.id}>.`);
         } catch (error) {
             console.error('Announcement command error:', error);
