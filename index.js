@@ -492,7 +492,97 @@ await channel.send({
         return;
     }
 
+// =========================
+// /plunder
+// =========================
 
+if (interaction.commandName === 'plunder') {
+    const strength = interaction.options.getString('strength', true);
+    const intelligence = interaction.options.getString('intelligence', true);
+    const tutorValue = interaction.options.getString('tutor_value', false);
+
+    const result = calculatePlunder({
+        strength,
+        intelligence,
+        tutorValue
+    });
+
+    if (result.error) {
+        return await interaction.reply({
+            content: `❌ ${result.error}`,
+            flags: 64
+        });
+    }
+
+    const embed = new EmbedBuilder()
+        .setTitle('💰 PIMD Max Plunder Calculator')
+        .setDescription(
+            'Estimated tutor value needed to reach the common PIMD max-plunder baseline.'
+        )
+        .addFields(
+            {
+                name: '💪 Strength',
+                value: formatPimdNumber(result.strength),
+                inline: true
+            },
+            {
+                name: '🧠 Intelligence',
+                value: formatPimdNumber(result.intelligence),
+                inline: true
+            },
+            {
+                name: '📊 Combined Stats',
+                value: formatPimdNumber(result.combinedStats),
+                inline: true
+            },
+            {
+                name: '🎯 Estimated Tutor Target',
+                value: `**${formatPimdNumber(result.targetTutorValue)}**`,
+                inline: false
+            }
+        );
+
+    if (result.currentTutor !== null) {
+        embed.addFields(
+            {
+                name: '💵 Current Tutor Value',
+                value: formatPimdNumber(result.currentTutor),
+                inline: true
+            },
+            {
+                name: '📈 Progress',
+                value: `${Math.min(result.progress, 100).toFixed(1)}%`,
+                inline: true
+            }
+        );
+
+        if (result.status === 'reached') {
+            embed.addFields({
+                name: '🟢 Status',
+                value:
+                    '**Estimated max plunder reached.**\n' +
+                    `You are approximately **${formatPimdNumber(Math.abs(result.difference))}** over the baseline target.`,
+                inline: false
+            });
+        } else {
+            embed.addFields({
+                name: '🔴 Status',
+                value:
+                    `Approximately **${formatPimdNumber(result.difference)}** more tutor value is needed to reach the baseline target.`,
+                inline: false
+            });
+        }
+    }
+
+    embed.setFooter({
+        text: 'TUFCBOT • Combined Stats × 15,000 baseline'
+    });
+
+    return await interaction.reply({
+        embeds: [embed],
+        flags: 64
+    });
+}
     // =========================
     // /member
     // =========================
