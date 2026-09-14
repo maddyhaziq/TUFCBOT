@@ -35,6 +35,7 @@ const {
 const { startTimers } = require('./timers');
 const { startEventMonitor } = require('./eventmonitor');
 const { startDashboard } = require('./dashboard/server');
+const { getDiscordChannelId } = require('./pimd_chat');
 
 const client = new Client({
     intents: [GatewayIntentBits.Guilds]
