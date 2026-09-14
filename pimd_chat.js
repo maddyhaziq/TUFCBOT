@@ -65,9 +65,16 @@ function testWebSocketPackage() {
         return false;
     }
 }
+const PIMD_CONFIG = {
+    WS_PATH: '/game/subscribe/global_chat/',
+    POLL_PATH: '/game/poll/chat/',
+    GAME_ID: 'pimd',
+    CHANNEL_ID: 16,
+};
 module.exports = {
     DISCORD_CHANNELS,
     PIMD_REGIONS,
+    PIMD_CONFIG,
     getDiscordChannelId,
     testDiscordChannels,
     testWebSocketPackage,
