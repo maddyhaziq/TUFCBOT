@@ -38,6 +38,7 @@ const { startDashboard } = require('./dashboard/server');
 const {
     getDiscordChannelId,
     testDiscordChannels,
+    testWebSocketPackage,
 } = require('./pimd_chat');
 
 const client = new Client({
@@ -265,6 +266,7 @@ client.once('clientReady', async () => {
     console.log(`✅ ${client.user.tag} is online!`);
 
     await testDiscordChannels(client);
+    testWebSocketPackage();
 
     startDashboard(client);
 });
