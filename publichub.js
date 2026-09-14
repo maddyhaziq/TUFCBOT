@@ -11,6 +11,10 @@ const { loadState } = require('./potdmonitor');
 const { searchDatabase } = require('./pimd_database');
 const { getMembers } = require('./googlesheets');
 const { solveDormUpgrade } = require('./dorm_calculator');
+const {
+    calculatePlunder,
+    formatPimdNumber
+} = require('./plunder');
 
 function normalize(value) { return String(value || '').trim().toLowerCase(); }
 
@@ -154,30 +158,33 @@ async function buildPublicHubPayload() {
                 .setTimestamp()
         ],
 
-        components: [
-            new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('tufc_public_potd')
-                    .setLabel('POTD')
-                    .setEmoji('🎉')
-                    .setStyle(ButtonStyle.Primary),
+       components: [
+    new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('tufc_public_potd')
+            .setLabel('POTD')
+            .setEmoji('🎉')
+            .setStyle(ButtonStyle.Primary),
 
-                new ButtonBuilder()
-                    .setCustomId('tufc_public_dorm_upgrade')
-                    .setLabel('Dorm Tower Upgrade')
-                    .setEmoji('🏗️')
-                    .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('tufc_public_plunder')
+            .setLabel('Max Plunder')
+            .setEmoji('💰')
+            .setStyle(ButtonStyle.Secondary),
 
-                new ButtonBuilder()
-                    .setCustomId('tufc_public_recruitment')
-                    .setLabel('Join The Unfiltered Corner')
-                    .setEmoji('💌')
-                    .setStyle(ButtonStyle.Primary)
-            )
-        ]
-    };
-}
+        new ButtonBuilder()
+            .setCustomId('tufc_public_dorm_upgrade')
+            .setLabel('Dorm Tower Upgrade')
+            .setEmoji('🏗️')
+            .setStyle(ButtonStyle.Secondary),
 
+        new ButtonBuilder()
+            .setCustomId('tufc_public_recruitment')
+            .setLabel('Join The Unfiltered Corner')
+            .setEmoji('💌')
+            .setStyle(ButtonStyle.Primary)
+    )
+]
 function textModal(id, title, label, placeholder, style = TextInputStyle.Short) {
     return new ModalBuilder().setCustomId(id).setTitle(title).addComponents(
         new ActionRowBuilder().addComponents(
@@ -210,6 +217,7 @@ const ids = [
     'tufc_public_item',
     'tufc_public_assistant',
     'tufc_public_dorm_upgrade',
+    'tufc_public_plunder',
     'tufc_public_recruitment'
 ];
     if (!ids.includes(interaction.customId)) return false;
@@ -260,7 +268,41 @@ const ids = [
 
     return true;
 }
+if (interaction.customId === 'tufc_public_plunder') {
+    await interaction.showModal(
+        new ModalBuilder()
+            .setCustomId('tufc_public_plunder_modal')
+            .setTitle('💰 Max Plunder Calculator')
+            .addComponents(
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('strength')
+                        .setLabel('Strength')
+                        .setPlaceholder('Example: 5.2m')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true)
+                ),
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('intelligence')
+                        .setLabel('Intelligence')
+                        .setPlaceholder('Example: 4.8m')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true)
+                ),
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('tutor_value')
+                        .setLabel('Current Tutor Value (Optional)')
+                        .setPlaceholder('Example: 120b')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(false)
+                )
+            )
+    );
 
+    return true;
+}
     if (interaction.customId === 'tufc_public_price') { await interaction.showModal(priceModal()); return true; }
     if (interaction.customId === 'tufc_public_item') { await interaction.showModal(itemModal()); return true; }
     if (interaction.customId === 'tufc_public_assistant') { await interaction.showModal(assistantModal()); return true; }
@@ -337,6 +379,94 @@ async function handlePublicModal(interaction) {
             .setFooter({
                 text: 'TUFCBOT • New Dorm Tower Upgrade Calculator'
             });
+
+        return interaction.reply({
+            flags: 64,
+            embeds: [embed]
+        });
+    }
+    
+    if (interaction.customId === 'tufc_public_plunder_modal') {
+        const strength = interaction.fields.getTextInputValue('strength');
+        const intelligence = interaction.fields.getTextInputValue('intelligence');
+        const tutorValue = interaction.fields.getTextInputValue('tutor_value');
+
+        const result = calculatePlunder({
+            strength,
+            intelligence,
+            tutorValue
+        });
+
+        if (result.error) {
+            return interaction.reply({
+                flags: 64,
+                content: `❌ ${result.error}`
+            });
+        }
+
+        const embed = new EmbedBuilder()
+            .setTitle('💰 PIMD Max Plunder Calculator')
+            .setDescription(
+                'Estimated tutor value needed to reach the common PIMD max-plunder baseline.'
+            )
+            .addFields(
+                {
+                    name: '💪 Strength',
+                    value: formatPimdNumber(result.strength),
+                    inline: true
+                },
+                {
+                    name: '🧠 Intelligence',
+                    value: formatPimdNumber(result.intelligence),
+                    inline: true
+                },
+                {
+                    name: '📊 Combined Stats',
+                    value: formatPimdNumber(result.combinedStats),
+                    inline: true
+                },
+                {
+                    name: '🎯 Estimated Tutor Target',
+                    value: `**${formatPimdNumber(result.targetTutorValue)}**`,
+                    inline: false
+                }
+            );
+
+        if (result.currentTutor !== null) {
+            embed.addFields(
+                {
+                    name: '💵 Current Tutor Value',
+                    value: formatPimdNumber(result.currentTutor),
+                    inline: true
+                },
+                {
+                    name: '📈 Progress',
+                    value: `${Math.min(result.progress, 100).toFixed(1)}%`,
+                    inline: true
+                }
+            );
+
+            if (result.status === 'reached') {
+                embed.addFields({
+                    name: '🟢 Status',
+                    value:
+                        '**Estimated max plunder reached.**\n' +
+                        `You are approximately **${formatPimdNumber(Math.abs(result.difference))}** over the baseline target.`,
+                    inline: false
+                });
+            } else {
+                embed.addFields({
+                    name: '🔴 Status',
+                    value:
+                        `Approximately **${formatPimdNumber(result.difference)}** more tutor value is needed to reach the baseline target.`,
+                    inline: false
+                });
+            }
+        }
+
+        embed.setFooter({
+            text: 'TUFCBOT • Combined Stats × 15,000 baseline'
+        });
 
         return interaction.reply({
             flags: 64,
