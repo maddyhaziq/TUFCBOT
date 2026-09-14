@@ -23,6 +23,11 @@ const {
 } = require('./hub');
 
 const {
+    calculatePlunder,
+    formatPimdNumber
+} = require('./plunder');
+
+const {
     buildPublicHubPayload,
     handlePublicButton,
     handlePublicModal
@@ -209,7 +214,29 @@ const commands = [
             subcommand
                 .setName('mentionoff')
                 .setDescription('Disable POTD role mentions (Admin only)')
-        )
+        ),
+    new SlashCommandBuilder()
+    .setName('plunder')
+    .setDescription('Calculate your estimated PIMD max plunder tutor value')
+    .addStringOption(option =>
+        option
+            .setName('strength')
+            .setDescription('Your Strength, e.g. 5.2m')
+            .setRequired(true)
+    )
+    .addStringOption(option =>
+        option
+            .setName('intelligence')
+            .setDescription('Your Intelligence, e.g. 4.8m')
+            .setRequired(true)
+    )
+    .addStringOption(option =>
+        option
+            .setName('tutor_value')
+            .setDescription('Optional total tutor value, e.g. 120b')
+            .setRequired(false)
+    ),
+
 ].map(command => command.toJSON());
 
 const rest = new REST({ version: '10' })
