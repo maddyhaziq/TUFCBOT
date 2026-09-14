@@ -1,3 +1,4 @@
+
 // TUFCBOT — PIMD Public Chat Mirror
 // Read-only Campus / Exchange mirroring
 
@@ -35,8 +36,26 @@ function getDiscordChannelId(region) {
     }
 }
 
+async function testDiscordChannels(client) {
+    console.log('🔎 Testing PIMD chat Discord channels...');
+
+    for (const [name, channelId] of Object.entries(DISCORD_CHANNELS)) {
+        const channel = await client.channels.fetch(channelId).catch(() => null);
+
+        if (!channel) {
+            console.error(`❌ ${name}: channel not found (${channelId})`);
+            continue;
+        }
+
+        console.log(`✅ ${name}: #${channel.name} (${channelId})`);
+    }
+
+    console.log('🔎 PIMD chat Discord channel test complete.');
+}
+
 module.exports = {
     DISCORD_CHANNELS,
     PIMD_REGIONS,
     getDiscordChannelId,
+    testDiscordChannels,
 };
