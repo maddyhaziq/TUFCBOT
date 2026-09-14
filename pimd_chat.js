@@ -52,10 +52,23 @@ async function testDiscordChannels(client) {
 
     console.log('🔎 PIMD chat Discord channel test complete.');
 }
+function testWebSocketPackage() {
+    try {
+        const WebSocket = require('ws');
 
+        if (WebSocket) {
+            console.log('✅ WebSocket package loaded successfully.');
+            return true;
+        }
+    } catch (error) {
+        console.error('❌ WebSocket package failed to load:', error.message);
+        return false;
+    }
+}
 module.exports = {
     DISCORD_CHANNELS,
     PIMD_REGIONS,
     getDiscordChannelId,
     testDiscordChannels,
+    testWebSocketPackage,
 };
