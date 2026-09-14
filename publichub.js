@@ -183,8 +183,10 @@ async function buildPublicHubPayload() {
             .setLabel('Join The Unfiltered Corner')
             .setEmoji('💌')
             .setStyle(ButtonStyle.Primary)
-    )
-]
+        )
+      ]
+   };
+}
 function textModal(id, title, label, placeholder, style = TextInputStyle.Short) {
     return new ModalBuilder().setCustomId(id).setTitle(title).addComponents(
         new ActionRowBuilder().addComponents(
