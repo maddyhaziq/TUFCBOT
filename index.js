@@ -35,7 +35,10 @@ const {
 const { startTimers } = require('./timers');
 const { startEventMonitor } = require('./eventmonitor');
 const { startDashboard } = require('./dashboard/server');
-const { getDiscordChannelId } = require('./pimd_chat');
+const {
+    getDiscordChannelId,
+    testDiscordChannels,
+} = require('./pimd_chat');
 
 const client = new Client({
     intents: [GatewayIntentBits.Guilds]
@@ -258,11 +261,13 @@ const rest = new REST({ version: '10' })
     }
 })();
 
-client.once('clientReady', () => {
+client.once('clientReady', async () => {
     console.log(`✅ ${client.user.tag} is online!`);
+
+    await testDiscordChannels(client);
+
     startDashboard(client);
 });
-
 
 // Convert DD/MM/YYYY into a JavaScript Date
 function parseDate(dateString) {
