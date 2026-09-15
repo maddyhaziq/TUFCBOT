@@ -1014,8 +1014,39 @@ async function handleHubSelectMenu(interaction, client) {
         const sheetMember = await lookupMember(ign);
         if (!sheetMember?.IGN) return interaction.editReply({ content: `❌ **${ign}** could not be found in Google Sheets.` });
 
-        const newRole = findRole(interaction.guild, next);
-        if (!newRole) return interaction.editReply({ content: `❌ Google Sheets role **${next}** does not have a matching Discord role.` });
+        await interaction.guild.roles.fetch();
+const botMember = await interaction.guild.members.fetchMe();
+
+const newRole = findRole(interaction.guild, next);
+
+if (!newRole) {
+    return interaction.editReply({
+        content: `❌ Google Sheets role **${next}** does not have a matching Discord role.`
+    });
+}
+
+console.log('🔍 TUFC ROLE DEBUG');
+console.log(`Target role: ${newRole.name}`);
+console.log(`Target ID: ${newRole.id}`);
+console.log(`Target position: ${newRole.position}`);
+console.log(`Target managed: ${newRole.managed}`);
+console.log(`Bot highest role: ${botMember.roles.highest.name}`);
+console.log(`Bot highest position: ${botMember.roles.highest.position}`);
+console.log(`Bot Manage Roles: ${botMember.permissions.has('ManageRoles')}`);
+
+if (newRole.managed) {
+    throw new Error(`Discord role is managed/integration-controlled: ${newRole.name}`);
+}
+
+if (!botMember.permissions.has('ManageRoles')) {
+    throw new Error('TUFCBOT does not have Manage Roles permission.');
+}
+
+if (botMember.roles.highest.position <= newRole.position) {
+    throw new Error(
+        `Bot role hierarchy is too low. Bot=${botMember.roles.highest.position}, Target=${newRole.position}`
+    );
+}
 
         let discordStatus = '⚠️ The Google Sheets role was updated, but no matching Discord member was found for this IGN.';
 
@@ -1054,12 +1085,6 @@ try {
             await member.roles.remove(
                 oldRole,
                 'TUFCBOT member role change'
-            );
-        }
-
-        if (!newRole.editable) {
-            throw new Error(
-                `Bot cannot manage Discord role: ${newRole.name}`
             );
         }
 
