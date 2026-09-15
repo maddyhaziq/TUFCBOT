@@ -1349,7 +1349,49 @@ async function handleHubModal(interaction, client) {
             return interaction.editReply(`❌ I couldn't prepare the Discord link.\n\n**Reason:** ${detail.slice(0, 1200)}`);
         }
     }
+    if (id === 'tufc_modal_member_change_lookup') {
+    await interaction.deferReply({ flags: 64 });
 
+    try {
+        const oldIgn = interaction.fields.getTextInputValue('ign').trim();
+
+        if (!oldIgn) {
+            return interaction.editReply('❌ Current Member IGN cannot be empty.');
+        }
+
+        const member = await lookupMember(oldIgn);
+
+        if (!member?.IGN) {
+            return interaction.editReply(
+                `❌ **${oldIgn}** could not be found in Google Sheets.`
+            );
+        }
+
+        return interaction.editReply({
+            content:
+                `👤 **Member found:** ${member.IGN}\n` +
+                `🏷️ **Role:** ${member.ROLE || '—'}\n\n` +
+                `Click below to enter the new IGN.`,
+            components: [
+                new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(
+                            `tufc_member_change_sheet_continue:${encodeURIComponent(member.IGN)}`
+                        )
+                        .setLabel('Continue — Enter New IGN')
+                        .setEmoji('✏️')
+                        .setStyle(ButtonStyle.Primary)
+                )
+            ]
+        });
+    } catch (error) {
+        console.error('[MEMBER CHANGE LOOKUP] Failed:', error);
+
+        return interaction.editReply(
+            '❌ I could not look up that member. Check the Railway logs for details.'
+        );
+    }
+}
     if (!(await isAdmin(interaction))) { await interaction.reply({ content: '❌ Only authorized management roles can perform this action.', ephemeral: true }); return true; }
 
     try {
