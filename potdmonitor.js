@@ -420,7 +420,6 @@ async function checkPOTD(client, options = {}) {
         potdCheckInProgress = false;
     }
 }
-}
 
 async function announceNewResults(client, state, oldPOTD, oldPPOTD, sourceUrl) {
     if (!state.notificationChannelId) return;
