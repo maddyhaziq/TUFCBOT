@@ -419,3 +419,103 @@ async function checkPOTD(client, options = {}) {
         // Always release the lock, even if the check fails.
         potdCheckInProgress = false;
     }
+}
+}
+
+async function announceNewResults(client, state, oldPOTD, oldPPOTD, sourceUrl) {
+    if (!state.notificationChannelId) return;
+
+    const channel = await client.channels.fetch(state.notificationChannelId).catch(() => null);
+
+    if (!channel || !channel.isTextBased()) {
+        console.error('❌ POTD notification channel is invalid or unavailable.');
+        return;
+    }
+
+    const mention = state.mentionRoleId ? `<@&${state.mentionRoleId}>` : '';
+
+    if (state.potd && !state.announcedPOTD) {
+        const embed = {
+            title: '🎉 PARTY OF THE DAY FOUND!',
+            description: `**${state.potd}** has been identified as today's Party of the Day.`,
+            fields: [
+                { name: 'Party', value: state.potd, inline: true },
+                { name: 'Type', value: 'POTD', inline: true },
+                { name: 'Cycle', value: state.cycle, inline: true },
+            ],
+            footer: { text: 'TUFCBOT • PIMD POTD Monitor' },
+            url: sourceUrl,
+        };
+
+        await channel.send({
+            content: mention || undefined,
+            embeds: [embed],
+            allowedMentions: state.mentionRoleId
+                ? { roles: [state.mentionRoleId] }
+                : { parse: [] },
+        });
+
+        state.announcedPOTD = true;
+        addHistory(state, 'POTD', state.potd);
+        saveState(state);
+
+        console.log(`🎉 POTD announced: ${state.potd}`);
+    }
+
+    if (state.ppotd && !state.announcedPPOTD) {
+        const embed = {
+            title: '💎 PRO PARTY OF THE DAY FOUND!',
+            description: `**${state.ppotd}** has been identified as today's Pro Party of the Day.`,
+            fields: [
+                { name: 'Party', value: state.ppotd, inline: true },
+                { name: 'Type', value: 'PPOTD', inline: true },
+                { name: 'Cycle', value: state.cycle, inline: true },
+            ],
+            footer: { text: 'TUFCBOT • PIMD POTD Monitor' },
+            url: sourceUrl,
+        };
+
+        await channel.send({
+            content: mention || undefined,
+            embeds: [embed],
+            allowedMentions: state.mentionRoleId
+                ? { roles: [state.mentionRoleId] }
+                : { parse: [] },
+        });
+
+        state.announcedPPOTD = true;
+        addHistory(state, 'PPOTD', state.ppotd);
+        saveState(state);
+
+        console.log(`💎 PPOTD announced: ${state.ppotd}`);
+    }
+}
+
+function addHistory(state, type, party) {
+    state.history = Array.isArray(state.history) ? state.history : [];
+
+    state.history.unshift({
+        cycle: state.cycle,
+        type,
+        party,
+        recordedAt: new Date().toISOString(),
+    });
+
+    state.history = state.history.slice(0, 30);
+}
+
+function startPOTDMonitor(client) {
+    console.log('🎉 Starting PIMD POTD monitor...');
+
+    checkPOTD(client);
+
+    setInterval(() => checkPOTD(client), CHECK_INTERVAL);
+}
+
+module.exports = {
+    checkPOTD,
+    startPOTDMonitor,
+    loadState,
+    saveState,
+    getCycleKey,
+};
