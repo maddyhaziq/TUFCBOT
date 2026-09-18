@@ -121,9 +121,11 @@ function normalizePartyName(name) {
 }
 
 function parsePOTDFromTemplate(text) {
-    // The tracker uses a colour legend followed by a list of parties.
-    // A PRO party can appear before the regular POTD has been identified,
-    // so POTD and PPOTD must be detected independently.
+    // The tracker can contain multiple POTD templates on the same forum page.
+    // We MUST use the latest template, even if today's POTD/PPOTD has not
+    // been identified yet. Otherwise yesterday's result can be detected
+    // as today's result.
+
     const lines = text
         .split('\n')
         .map(line => line.replace(/\s+/g, ' ').trim())
@@ -142,81 +144,124 @@ function parsePOTDFromTemplate(text) {
             .trim()
     );
 
-    const isEC = value => EC_PARTIES.some(
-        ec => normalize(value).toLowerCase() === ec.toLowerCase()
-    );
+    const isPro = value =>
+        /\(PRO\)\s*(?:@[A-Za-z0-9_.-]+)?$/i.test(value.trim());
 
-    const isPro = value => /\(PRO\)\s*(?:@[A-Za-z0-9_.-]+)?$/i.test(value.trim());
-
-    const blocks = [];
+    const templates = [];
 
     for (let i = 0; i < lines.length; i++) {
-        // The forum renders this heading as "Key:" in the current tracker.
-        if (!/^Key\s*:?$/i.test(lines[i])) continue;
+        if (!/^Key\s*:?$/i.test(lines[i])) {
+            continue;
+        }
 
         const legendIndex = lines.findIndex(
-            (line, index) => index > i && /^Not Party Of The Day\s*:?$/i.test(line)
+            (line, index) =>
+                index > i &&
+                /^Not Party Of The Day\s*:?$/i.test(line)
         );
-        if (legendIndex === -1) continue;
+
+        if (legendIndex === -1) {
+            continue;
+        }
 
         const regularIndex = lines.findIndex(
-            (line, index) => index > legendIndex && /^Regular Parties\s*:?$/i.test(line)
+            (line, index) =>
+                index > legendIndex &&
+                /^Regular Parties\s*:?$/i.test(line)
         );
-        if (regularIndex === -1) continue;
+
+        if (regularIndex === -1) {
+            continue;
+        }
 
         const blockLines = lines.slice(legendIndex + 1, regularIndex);
         const entries = [];
 
         for (const line of blockLines) {
-            if (!/^(?:\*|[-–—•·])\s+/.test(line)) continue;
+            if (!/^(?:\*|[-–—•·])\s+/.test(line)) {
+                continue;
+            }
+
             const party = normalize(line);
-            if (party) entries.push(party);
+
+            if (party) {
+                entries.push(party);
+            }
         }
 
-        // We need the three known EC entries to anchor the current-day list.
-        const firstEC = entries.findIndex(e => e.toLowerCase() === EC_PARTIES[0].toLowerCase());
+        // Find the three EC anchors that identify a real POTD template.
+        const firstEC = entries.findIndex(
+            entry =>
+                entry.toLowerCase() === EC_PARTIES[0].toLowerCase()
+        );
+
         const secondEC = firstEC >= 0
-            ? entries.findIndex((e, idx) => idx > firstEC && e.toLowerCase() === EC_PARTIES[1].toLowerCase())
-            : -1;
-        const thirdEC = secondEC >= 0
-            ? entries.findIndex((e, idx) => idx > secondEC && e.toLowerCase() === EC_PARTIES[2].toLowerCase())
+            ? entries.findIndex(
+                (entry, index) =>
+                    index > firstEC &&
+                    entry.toLowerCase() === EC_PARTIES[1].toLowerCase()
+            )
             : -1;
 
-        if (firstEC < 0 || secondEC < 0 || thirdEC < 0) continue;
+        const thirdEC = secondEC >= 0
+            ? entries.findIndex(
+                (entry, index) =>
+                    index > secondEC &&
+                    entry.toLowerCase() === EC_PARTIES[2].toLowerCase()
+            )
+            : -1;
+
+        if (firstEC < 0 || secondEC < 0 || thirdEC < 0) {
+            continue;
+        }
 
         const afterEC = entries.slice(thirdEC + 1);
+
         const proCandidates = afterEC.filter(isPro);
         const nonProCandidates = afterEC.filter(entry => !isPro(entry));
 
-        // PPOTD is independently authoritative: if the PRO party is already
-        // posted, record it even when the regular POTD has not appeared yet.
-        const ppotd = proCandidates.length ? proCandidates[0] : null;
+        const ppotd = proCandidates.length
+            ? proCandidates[0]
+            : null;
 
-        // Only use a non-PRO entry as POTD when there is exactly one candidate.
-        // This prevents the parser from guessing when the tracker is still
-        // showing multiple pending/checking parties.
-        const potd = nonProCandidates.length === 1 ? nonProCandidates[0] : null;
+        const potd = nonProCandidates.length === 1
+            ? nonProCandidates[0]
+            : null;
 
-        // A block is verified if it has the EC anchor list and at least one
-        // authoritative result (POTD or PPOTD). This allows PPOTD to be found
-        // first, which is how the current tracker can behave.
-        if (!potd && !ppotd) continue;
-
-        blocks.push({ potd, ppotd, entries });
+        // IMPORTANT:
+        // Store EVERY valid template, including templates with no result.
+        //
+        // This allows us to select today's empty template instead of
+        // accidentally falling back to yesterday's completed template.
+        templates.push({
+            potd,
+            ppotd,
+            entries,
+        });
     }
 
-    if (!blocks.length) {
-        console.log('🔎 POTD parser: no verified Key block found.');
-        return { potd: null, ppotd: null, verified: false, entries: [] };
+    if (!templates.length) {
+        console.log('🔎 POTD parser: no valid POTD template found.');
+
+        return {
+            potd: null,
+            ppotd: null,
+            verified: false,
+            entries: [],
+        };
     }
 
-    const selected = blocks[blocks.length - 1];
+    // The LAST valid template on the page is the newest template.
+    // It must be authoritative even when it contains no result yet.
+    const selected = templates[templates.length - 1];
 
     console.log(
-        '🔎 POTD parser verified:',
+        '🔎 POTD parser latest template:',
         selected.potd || '(POTD not found yet)',
         '|',
-        selected.ppotd || '(PPOTD not found yet)'
+        selected.ppotd || '(PPOTD not found yet)',
+        '| templates:',
+        templates.length
     );
 
     return {
