@@ -433,7 +433,10 @@ async function announceNewResults(client, state, oldPOTD, oldPPOTD, sourceUrl) {
 
     const mention = state.mentionRoleId ? `<@&${state.mentionRoleId}>` : '';
 
-    
+    // =========================
+    // POTD NOTIFICATION
+    // =========================
+    if (state.potd && !state.announcedPOTD) {
         const embed = {
             title: '🎉 PARTY OF THE DAY FOUND!',
             description: `**${state.potd}** has been identified as today's Party of the Day.`,
@@ -446,30 +449,34 @@ async function announceNewResults(client, state, oldPOTD, oldPPOTD, sourceUrl) {
             url: sourceUrl,
         };
 
-       state.announcedPOTD = true;
-addHistory(state, 'POTD', state.potd);
-saveState(state);
+        // Claim notification BEFORE sending.
+        // This prevents duplicate sends from overlapping checks.
+        state.announcedPOTD = true;
+        addHistory(state, 'POTD', state.potd);
+        saveState(state);
 
-try {
-    await channel.send({
-        content: mention || undefined,
-        embeds: [embed],
-        allowedMentions: state.mentionRoleId
-            ? { roles: [state.mentionRoleId] }
-            : { parse: [] },
-    });
+        try {
+            await channel.send({
+                content: mention || undefined,
+                embeds: [embed],
+                allowedMentions: state.mentionRoleId
+                    ? { roles: [state.mentionRoleId] }
+                    : { parse: [] },
+            });
 
-    console.log(`🎉 POTD announced: ${state.potd}`);
-} catch (error) {
-    // Discord send failed, so allow the bot to retry next check.
-    state.announcedPOTD = false;
-    saveState(state);
+            console.log(`🎉 POTD announced: ${state.potd}`);
+        } catch (error) {
+            // Discord send failed, so allow a retry.
+            state.announcedPOTD = false;
+            saveState(state);
 
-    console.error('❌ POTD notification failed:', error.message);
-}
-        console.log(`🎉 POTD announced: ${state.potd}`);
+            console.error('❌ POTD notification failed:', error.message);
+        }
     }
 
+    // =========================
+    // PPOTD NOTIFICATION
+    // =========================
     if (state.ppotd && !state.announcedPPOTD) {
         const embed = {
             title: '💎 PRO PARTY OF THE DAY FOUND!',
@@ -483,24 +490,31 @@ try {
             url: sourceUrl,
         };
 
+        // Claim notification BEFORE sending.
+        // This prevents duplicate sends from overlapping checks.
+        state.announcedPPOTD = true;
+        addHistory(state, 'PPOTD', state.ppotd);
+        saveState(state);
+
         try {
-    await channel.send({
-        content: mention || undefined,
-        embeds: [embed],
-        allowedMentions: state.mentionRoleId
-            ? { roles: [state.mentionRoleId] }
-            : { parse: [] },
-    });
+            await channel.send({
+                content: mention || undefined,
+                embeds: [embed],
+                allowedMentions: state.mentionRoleId
+                    ? { roles: [state.mentionRoleId] }
+                    : { parse: [] },
+            });
 
-    console.log(`💎 PPOTD announced: ${state.ppotd}`);
-} catch (error) {
-    // Discord send failed, so allow the bot to retry next check.
-    state.announcedPPOTD = false;
-    saveState(state);
+            console.log(`💎 PPOTD announced: ${state.ppotd}`);
+        } catch (error) {
+            // Discord send failed, so allow a retry.
+            state.announcedPPOTD = false;
+            saveState(state);
 
-    console.error('❌ PPOTD notification failed:', error.message);
+            console.error('❌ PPOTD notification failed:', error.message);
+        }
+    }
 }
-
 function startPOTDMonitor(client) {
     console.log('🎉 Starting PIMD POTD monitor...');
 
