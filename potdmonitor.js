@@ -6,6 +6,9 @@ const STATE_FILE = statePath('potd_state.json');
 const CHECK_INTERVAL = 2 * 60 * 1000; // 2 minutes
 const BRUNEI_OFFSET_MS = 8 * 60 * 60 * 1000;
 
+// Prevent multiple POTD checks from running at the same time.
+let potdCheckInProgress = false;
+
 const SPECIAL_POTD_KEY_ITEMS = new Set([
     'Dog Star',
     'Cat Cafe',
@@ -331,28 +334,46 @@ function resetForNewCycle(state, cycle) {
 }
 
 async function checkPOTD(client, options = {}) {
-    const state = loadState();
-    const cycle = getCycleKey();
-    const changedCycle = resetForNewCycle(state, cycle);
+    // Prevent overlapping checks from sending duplicate notifications.
+    if (potdCheckInProgress) {
+        console.log('⏳ POTD monitor: previous check still running, skipping this check.');
+        return {
+            ok: false,
+            skipped: true,
+        };
+    }
 
-    if (changedCycle) saveState(state);
+    potdCheckInProgress = true;
 
     try {
+        const state = loadState();
+        const cycle = getCycleKey();
+        const changedCycle = resetForNewCycle(state, cycle);
+
+        if (changedCycle) {
+            saveState(state);
+        }
+
         const page = await fetchLatestForumPage();
         const result = parsePOTDFromTemplate(page.text);
 
         if (!result) {
             console.log('⚠️ POTD monitor: Could not parse the current forum template.');
-            return { ok: false, state, page };
+            return {
+                ok: false,
+                state,
+                page,
+            };
         }
 
         const testing = parseTestingAndResults(page.text);
+
         const oldPOTD = state.potd;
         const oldPPOTD = state.ppotd;
 
         if (result.verified) {
-            // A verified parse is authoritative. Replace the saved values
-            // instead of keeping stale data from an earlier bad parse.
+            // The latest verified template is authoritative.
+            // Replace saved values instead of keeping stale results.
             state.potd = result.potd || null;
             state.ppotd = result.ppotd || null;
 
@@ -368,7 +389,13 @@ async function checkPOTD(client, options = {}) {
         }
 
         if (options.announce !== false && client) {
-            await announceNewResults(client, state, oldPOTD, oldPPOTD, page.url);
+            await announceNewResults(
+                client,
+                state,
+                oldPOTD,
+                oldPPOTD,
+                page.url
+            );
         }
 
         return {
@@ -378,96 +405,17 @@ async function checkPOTD(client, options = {}) {
             result,
             testing,
         };
+
     } catch (error) {
         console.error('❌ POTD monitor check failed:', error.message);
-        return { ok: false, state, error };
-    }
-}
 
-async function announceNewResults(client, state, oldPOTD, oldPPOTD, sourceUrl) {
-    if (!state.notificationChannelId) return;
-
-    const channel = await client.channels.fetch(state.notificationChannelId).catch(() => null);
-    if (!channel || !channel.isTextBased()) {
-        console.error('❌ POTD notification channel is invalid or unavailable.');
-        return;
-    }
-
-    const mention = state.mentionRoleId ? `<@&${state.mentionRoleId}>` : '';
-
-    if (state.potd && !state.announcedPOTD) {
-        const embed = {
-            title: '🎉 PARTY OF THE DAY FOUND!',
-            description: `**${state.potd}** has been identified as today's Party of the Day.`,
-            fields: [
-                { name: 'Party', value: state.potd, inline: true },
-                { name: 'Type', value: 'POTD', inline: true },
-                { name: 'Cycle', value: state.cycle, inline: true },
-            ],
-            footer: { text: 'TUFCBOT • PIMD POTD Monitor' },
-            url: sourceUrl,
+        return {
+            ok: false,
+            state: loadState(),
+            error,
         };
 
-        await channel.send({
-            content: mention || undefined,
-            embeds: [embed],
-            allowedMentions: state.mentionRoleId ? { roles: [state.mentionRoleId] } : { parse: [] },
-        });
-
-        state.announcedPOTD = true;
-        addHistory(state, 'POTD', state.potd);
-        saveState(state);
-        console.log(`🎉 POTD announced: ${state.potd}`);
+    } finally {
+        // Always release the lock, even if the check fails.
+        potdCheckInProgress = false;
     }
-
-    if (state.ppotd && !state.announcedPPOTD) {
-        const embed = {
-            title: '💎 PRO PARTY OF THE DAY FOUND!',
-            description: `**${state.ppotd}** has been identified as today's Pro Party of the Day.`,
-            fields: [
-                { name: 'Party', value: state.ppotd, inline: true },
-                { name: 'Type', value: 'PPOTD', inline: true },
-                { name: 'Cycle', value: state.cycle, inline: true },
-            ],
-            footer: { text: 'TUFCBOT • PIMD POTD Monitor' },
-            url: sourceUrl,
-        };
-
-        await channel.send({
-            content: mention || undefined,
-            embeds: [embed],
-            allowedMentions: state.mentionRoleId ? { roles: [state.mentionRoleId] } : { parse: [] },
-        });
-
-        state.announcedPPOTD = true;
-        addHistory(state, 'PPOTD', state.ppotd);
-        saveState(state);
-        console.log(`💎 PPOTD announced: ${state.ppotd}`);
-    }
-}
-
-function addHistory(state, type, party) {
-    state.history = Array.isArray(state.history) ? state.history : [];
-    state.history.unshift({
-        cycle: state.cycle,
-        type,
-        party,
-        recordedAt: new Date().toISOString(),
-    });
-    state.history = state.history.slice(0, 30);
-}
-
-function startPOTDMonitor(client) {
-    console.log('🎉 Starting PIMD POTD monitor...');
-
-    checkPOTD(client);
-    setInterval(() => checkPOTD(client), CHECK_INTERVAL);
-}
-
-module.exports = {
-    checkPOTD,
-    startPOTDMonitor,
-    loadState,
-    saveState,
-    getCycleKey,
-};
