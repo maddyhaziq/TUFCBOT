@@ -1196,7 +1196,6 @@ client.once('clientReady', async () => {
     await checkGoldPassExpiries();
     setInterval(checkGoldPassExpiries, GOLD_PASS_CHECK_INTERVAL);
 
-    startPOTDMonitor(client);
     startTimers(client);
     startEventMonitor(client);
 });
