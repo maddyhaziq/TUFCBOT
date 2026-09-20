@@ -515,6 +515,18 @@ async function announceNewResults(client, state, oldPOTD, oldPPOTD, sourceUrl) {
         }
     }
 }
+function addHistory(state, type, party) {
+    state.history = Array.isArray(state.history) ? state.history : [];
+
+    state.history.unshift({
+        cycle: state.cycle,
+        type,
+        party,
+        recordedAt: new Date().toISOString(),
+    });
+
+    state.history = state.history.slice(0, 30);
+}
 function startPOTDMonitor(client) {
     console.log('🎉 Starting PIMD POTD monitor...');
 
