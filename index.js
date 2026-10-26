@@ -35,6 +35,7 @@ const {
 } = require('./publichub');
 const { startTimers } = require('./timers');
 const { startEventMonitor } = require('./eventmonitor');
+const { startHuntMonitor } = require('./huntmonitor');
 const { startDashboard } = require('./dashboard/server');
 const { startPimdChatMirror } = require('./pimd_chat');
 
@@ -288,6 +289,7 @@ client.once('clientReady', async () => {
     startPOTDMonitor(client);
     startTimers(client);
     startEventMonitor(client);
+    startHuntMonitor(client);
     startPimdChatMirror(client);
     startDashboard(client);
 });
