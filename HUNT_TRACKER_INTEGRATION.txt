@@ -1,0 +1,146 @@
+TUFCBOT HUNT TRACKER — INTEGRATION GUIDE
+=========================================
+
+Reference branch inspected: https://github.com/maddyhaziq/TUFCBOT (main)
+Files reviewed: index.js, eventmonitor.js, storage.js.
+This package is a prepared implementation; it has NOT been committed to GitHub or deployed.
+
+1) Add huntmonitor.js
+---------------------
+Upload the included huntmonitor.js to the repository root (same folder as index.js and eventmonitor.js).
+
+It stores its data at the existing storage.js state path as hunt_state.json, so it uses the Railway volume setup.
+
+2) Add the import in index.js
+-----------------------------
+Near the existing imports at the top of index.js, add:
+
+const {
+    startHuntMonitor,
+    setManualHunt,
+    getActiveHunt
+} = require('./huntmonitor');
+
+3) Register /sethunt
+--------------------
+In the `commands` array, before the closing `].map(command => command.toJSON());`, add this command object (include a comma after the preceding command):
+
+new SlashCommandBuilder()
+    .setName('sethunt')
+    .setDescription('Set or correct the active PIMD hunt schedule (Management only)')
+    .addStringOption(option =>
+        option.setName('name')
+            .setDescription('Hunt name, e.g. Doomed Fates')
+            .setRequired(true)
+            .setMaxLength(100)
+    )
+    .addStringOption(option =>
+        option.setName('start')
+            .setDescription('Official hunt start date, DD/MM/YYYY (Pacific date)')
+            .setRequired(true)
+    )
+    .addStringOption(option =>
+        option.setName('end')
+            .setDescription('Official hunt end date, DD/MM/YYYY (Pacific date)')
+            .setRequired(true)
+    )
+    .addStringOption(option =>
+        option.setName('box')
+            .setDescription('Optional hunt box name')
+            .setRequired(false)
+            .setMaxLength(100)
+    )
+    .addStringOption(option =>
+        option.setName('reward')
+            .setDescription('Optional PPOTD Pro-drop reward name')
+            .setRequired(false)
+            .setMaxLength(100)
+    )
+    .addStringOption(option =>
+        option.setName('forum_url')
+            .setDescription('Optional official PIMD forum thread URL')
+            .setRequired(false)
+            .setMaxLength(300)
+    ),
+
+Important: this must be an item inside the existing `commands` array, not after `.map(...)`.
+
+4) Start the monitor
+--------------------
+Inside the existing `client.once('clientReady', async () => { ... })` startup block near the top of index.js, add:
+
+startHuntMonitor(client);
+
+Keep the existing `startEventMonitor(client)` and other startup calls.
+
+The current public main branch has TWO clientReady listeners that both call startTimers and startEventMonitor. Avoid adding another listener; add startHuntMonitor(client) to the first existing listener only.
+
+5) Handle /sethunt
+------------------
+Inside the existing `client.on('interactionCreate', async interaction => { ... })` handler, after:
+
+if (!interaction.isChatInputCommand()) return;
+
+add this handler:
+
+if (interaction.commandName === 'sethunt') {
+    if (!(await isManagementAuthorized(interaction))) {
+        return await interaction.reply({
+            content: '❌ You need one of the TUFC management roles to use this command.',
+            flags: 64
+        });
+    }
+
+    const name = interaction.options.getString('name', true);
+    const startDate = interaction.options.getString('start', true);
+    const endDate = interaction.options.getString('end', true);
+    const box = interaction.options.getString('box');
+    const reward = interaction.options.getString('reward');
+    const forumUrl = interaction.options.getString('forum_url');
+
+    const result = setManualHunt({ name, startDate, endDate, box, reward, forumUrl });
+    if (result.error) {
+        return await interaction.reply({ content: `❌ ${result.error}`, flags: 64 });
+    }
+
+    const hunt = result.hunt;
+    const format = value => new Intl.DateTimeFormat('en-SG', {
+        timeZone: 'Asia/Singapore',
+        dateStyle: 'medium',
+        timeStyle: 'short'
+    }).format(new Date(value));
+
+    return await interaction.reply({
+        content:
+            `✅ **Hunt schedule updated**\n` +
+            `**Hunt:** ${hunt.name}\n` +
+            `**Start:** ${format(hunt.startAt)} Singapore time\n` +
+            `**End:** ${format(hunt.endAt)} Singapore time\n` +
+            `**Daily target:** 1,500 drops per member\n` +
+            `**Dates:** Interpreted as 12:00 PM Pacific Time on each supplied date.\n` +
+            `Automatic forum detection will not overwrite these dates for this hunt.`,
+        flags: 64
+    });
+}
+
+6) Use /sethunt
+---------------
+Example:
+/sethunt name:"Doomed Fates 🖤" start:15/10/2026 end:02/11/2026 box:"Infernal Box" reward:"Demon Goat Plushie" forum_url:"https://forum.partyinmydorm.com/threads/doomed-fates-%F0%9F%96%A4.147351/"
+
+Dates use DD/MM/YYYY and are interpreted as 12:00 PM America/Los_Angeles on each date, matching the example forum availability announcements. The code handles PDT/PST transitions using the IANA time zone.
+
+7) Before deploying
+-------------------
+- Check syntax locally with `node --check huntmonitor.js` and `node --check index.js`.
+- Verify the `sethunt` object was inserted inside the commands array.
+- Confirm both Discord destination channels allow the bot to View Channel and Send Messages.
+- Deploy, then check Railway logs for “PIMD Hunt Tracker started”.
+- When the forum is down, `/sethunt` is the fallback. Automatic forum detection retries every 5 minutes when the forum responds again.
+
+Implementation notes:
+- Requires Node with global fetch and Intl time-zone support (Node 18+).
+- Detects likely hunt posts only when the post contains EVENT AVAILABILITY, Pro Party of the Day Drop, and a hunt/event box phrase.
+- It sends reminders at 3 AM Singapore time, once per Singapore calendar day, while the official availability window is open.
+- Each reminder's cumulative target is hunt day × 1,500 per member.
+- The forum parser is heuristic and must be tested when PIMD forums recover.
