@@ -16,6 +16,7 @@ const SPECIAL_POTD_KEY_ITEMS = new Set([
     'Bikini',
 ]);
 
+
 function loadState() {
     try {
         if (!fs.existsSync(STATE_FILE)) {
@@ -23,6 +24,8 @@ function loadState() {
                 cycle: null,
                 potd: null,
                 ppotd: null,
+                manualPOTD: false,
+                manualPPOTD: false,
                 announcedPOTD: false,
                 announcedPPOTD: false,
                 notificationChannelId: null,
@@ -37,6 +40,8 @@ function loadState() {
             cycle: null,
             potd: null,
             ppotd: null,
+            manualPOTD: false,
+            manualPPOTD: false,
             announcedPOTD: false,
             announcedPPOTD: false,
             notificationChannelId: null,
@@ -322,12 +327,15 @@ async function fetchLatestForumPage() {
     };
 }
 
+
 function resetForNewCycle(state, cycle) {
     if (state.cycle === cycle) return false;
 
     state.cycle = cycle;
     state.potd = null;
     state.ppotd = null;
+    state.manualPOTD = false;
+    state.manualPPOTD = false;
     state.announcedPOTD = false;
     state.announcedPPOTD = false;
     return true;
@@ -371,11 +379,16 @@ async function checkPOTD(client, options = {}) {
         const oldPOTD = state.potd;
         const oldPPOTD = state.ppotd;
 
+        
         if (result.verified) {
-            // The latest verified template is authoritative.
-            // Replace saved values instead of keeping stale results.
-            state.potd = result.potd || null;
-            state.ppotd = result.ppotd || null;
+            // Keep manually entered results protected from forum overwrites.
+            if (!state.) {
+                state.potd = result.potd || null;
+            }
+
+            if (!state.manualPPOTD) {
+                state.ppotd = result.ppotd || null;
+            }
 
             if (state.potd !== oldPOTD) {
                 state.announcedPOTD = false;
