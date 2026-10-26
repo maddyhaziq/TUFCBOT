@@ -381,25 +381,25 @@ async function checkPOTD(client, options = {}) {
 
         
         if (result.verified) {
-            // Keep manually entered results protected from forum overwrites.
-            if (!state.) {
-                state.potd = result.potd || null;
-            }
+    // Keep manually entered results protected from forum overwrites.
+    if (!state.manualPOTD) {
+        state.potd = result.potd || null;
+    }
 
-            if (!state.manualPPOTD) {
-                state.ppotd = result.ppotd || null;
-            }
+    if (!state.manualPPOTD) {
+        state.ppotd = result.ppotd || null;
+    }
 
-            if (state.potd !== oldPOTD) {
-                state.announcedPOTD = false;
-            }
+    if (state.potd !== oldPOTD) {
+        state.announcedPOTD = false;
+    }
 
-            if (state.ppotd !== oldPPOTD) {
-                state.announcedPPOTD = false;
-            }
+    if (state.ppotd !== oldPPOTD) {
+        state.announcedPPOTD = false;
+    }
 
-            saveState(state);
-        }
+    saveState(state);
+}
 
         if (options.announce !== false && client) {
             await announceNewResults(
