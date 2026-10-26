@@ -973,7 +973,7 @@ if (subcommand === 'set' || subcommand === 'proset') {
             }
 
             await channel.send({
-                content: 'Pro party is found in POTD channel',
+                content: '🎉PRO PARTY OF THE DAY IS FOUND🎉',
                 allowedMentions: { parse: [] }
             });
         } catch (error) {
