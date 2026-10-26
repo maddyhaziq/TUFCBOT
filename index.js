@@ -13,7 +13,8 @@ const {
 } = require('discord.js');
 
 const { getMembers, updateGoldPass, markGoldPassNotified } = require('./googlesheets');
-const { checkPOTD, startPOTDMonitor, loadState, saveState } = require('./potdmonitor');
+const { checkPOTD, startPOTDMonitor, loadState, saveState, getCycleKey } = require('./potdmonitor');
+
 const {
     buildHubPayload,
     handleHubButton,
@@ -211,10 +212,34 @@ const commands = [
                         .setRequired(true)
                 )
         )
-        .addSubcommand(subcommand =>
+                .addSubcommand(subcommand =>
             subcommand
                 .setName('mentionoff')
                 .setDescription('Disable POTD role mentions (Admin only)')
+        )
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('set')
+                .setDescription("Manually set or overwrite today's POTD (Management only)")
+                .addStringOption(option =>
+                    option
+                        .setName('party')
+                        .setDescription('Party name for POTD')
+                        .setRequired(true)
+                        .setMaxLength(100)
+                )
+        )
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('proset')
+                .setDescription("Manually set or overwrite today's PPOTD (Management only)")
+                .addStringOption(option =>
+                    option
+                        .setName('party')
+                        .setDescription('Pro party name for PPOTD')
+                        .setRequired(true)
+                        .setMaxLength(100)
+                )
         ),
     new SlashCommandBuilder()
     .setName('plunder')
@@ -880,6 +905,91 @@ if (interaction.commandName === 'publichub') {
 
             return await interaction.reply(`✅ POTD automatic announcements will now be sent in <#${interaction.channelId}>.`);
         }
+
+if (subcommand === 'set' || subcommand === 'proset') {
+    if (!(await isManagementAuthorized(interaction))) {
+        return await interaction.reply({
+            content: '❌ You need one of the TUFC management roles to use this tool.',
+            flags: 64
+        });
+    }
+
+    const party = String(interaction.options.getString('party') || '').trim();
+
+    if (!party) {
+        return await interaction.reply({
+            content: '❌ Please enter a valid party name.',
+            flags: 64
+        });
+    }
+
+    const cycle = getCycleKey();
+
+    if (state.cycle !== cycle) {
+        state.cycle = cycle;
+        state.potd = null;
+        state.ppotd = null;
+        state.manualPOTD = false;
+        state.manualPPOTD = false;
+        state.announcedPOTD = false;
+        state.announcedPPOTD = false;
+    }
+
+    const isPro = subcommand === 'proset';
+
+    if (isPro) {
+        state.ppotd = party;
+        state.manualPPOTD = true;
+        state.announcedPPOTD = true;
+    } else {
+        state.potd = party;
+        state.manualPOTD = true;
+        state.announcedPOTD = true;
+    }
+
+    try {
+        saveState(state);
+    } catch (error) {
+        console.error('Manual POTD save failed:', error);
+        return await interaction.reply({
+            content: '❌ I could not save the manual result.',
+            flags: 64
+        });
+    }
+
+    if (isPro) {
+        if (!state.notificationChannelId) {
+            return await interaction.reply({
+                content: `✅ PPOTD saved as **${party}**, but no POTD announcement channel is configured. Use \`/potd channel\` in the target channel.`,
+                flags: 64
+            });
+        }
+
+        try {
+            const channel = await client.channels.fetch(state.notificationChannelId);
+
+            if (!channel || !channel.isTextBased() || typeof channel.send !== 'function') {
+                throw new Error('Configured POTD channel is not a text channel.');
+            }
+
+            await channel.send({
+                content: 'Pro party is found in POTD channel',
+                allowedMentions: { parse: [] }
+            });
+        } catch (error) {
+            console.error('Manual PPOTD saved, but channel notification failed:', error);
+            return await interaction.reply({
+                content: `⚠️ PPOTD **${party}** was saved, but I could not send the notification. Check the bot's channel permissions.`,
+                flags: 64
+            });
+        }
+    }
+
+    return await interaction.reply({
+        content: `✅ ${isPro ? 'PPOTD' : 'POTD'} manually saved as **${party}**. This value is protected from automatic forum overwrites until the next POTD cycle.`,
+        flags: 64
+    });
+}
 
         if (subcommand === 'mention') {
             if (!(await isManagementAuthorized(interaction))) {
