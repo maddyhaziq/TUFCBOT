@@ -691,9 +691,6 @@ function getHuntProgress(hunt = getActiveHunt(), now = new Date()) {
     };
 
     const startDay = toDayNumber(easternDate(start));
-    };
-
-    const startDay = toDayNumber(easternDate(start));
     const endDay = toDayNumber(easternDate(end));
     const today = toDayNumber(easternDate(now));
 
