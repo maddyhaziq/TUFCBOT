@@ -661,45 +661,48 @@ function getHuntProgress(hunt = getActiveHunt(), now = new Date()) {
     if (
         Number.isNaN(start.getTime()) ||
         Number.isNaN(end.getTime()) ||
-        end < start
+        Number.isNaN(now.getTime()) ||
+        end <= start
     ) {
         return null;
     }
 
-    // Extract the calendar date in US Eastern time.
-    // This automatically follows EST/EDT daylight-saving changes.
-    const easternDate = (date) => {
+    const easternParts = (date) => {
         const parts = new Intl.DateTimeFormat('en-US', {
             timeZone: EASTERN_TZ,
             year: 'numeric',
             month: '2-digit',
             day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hourCycle: 'h23',
         }).formatToParts(date);
 
-        const values = Object.fromEntries(
+        return Object.fromEntries(
             parts
                 .filter(part => part.type !== 'literal')
                 .map(part => [part.type, part.value])
         );
-
-        return `${values.day}/${values.month}/${values.year}`;
     };
 
-        const toDayNumber = (value) => {
-        const [day, month, year] = value.split('/').map(Number);
-        return Date.UTC(year, month - 1, day) / 86400000;
+    // Get the Eastern calendar date as a UTC day number.
+    // UTC is used here only for date arithmetic, not as the hunt timezone.
+    const easternDayNumber = (date) => {
+        const parts = easternParts(date);
+
+        return Date.UTC(
+            Number(parts.year),
+            Number(parts.month) - 1,
+            Number(parts.day)
+        ) / 86400000;
     };
 
-    const startDay = toDayNumber(easternDate(start));
-    const endDay = toDayNumber(easternDate(end));
-    const today = toDayNumber(easternDate(now));
-
-    const totalDays = endDay - startDay + 1;
+    const totalDays =
+        easternDayNumber(end) - easternDayNumber(start) + 1;
 
     if (totalDays < 1) return null;
 
-    // Before the hunt starts.
-    if (today < startDay) {
+    if (now < start) {
         return {
             currentDay: 0,
             totalDays,
@@ -707,8 +710,7 @@ function getHuntProgress(hunt = getActiveHunt(), now = new Date()) {
         };
     }
 
-    // After the hunt ends.
-    if (today > endDay) {
+    if (now >= end) {
         return {
             currentDay: totalDays,
             totalDays,
@@ -716,7 +718,29 @@ function getHuntProgress(hunt = getActiveHunt(), now = new Date()) {
         };
     }
 
-    const currentDay = today - startDay + 1;
+    // Each hunt day begins at its actual scheduled timestamp.
+    // This handles EST/EDT transitions without assuming every day
+    // is exactly 24 hours long.
+    const elapsedDays = easternDayNumber(now) - easternDayNumber(start);
+    const startParts = easternParts(start);
+    const nowParts = easternParts(now);
+
+    const startHour = Number(startParts.hour);
+    const startMinute = Number(startParts.minute);
+    const nowHour = Number(nowParts.hour);
+    const nowMinute = Number(nowParts.minute);
+
+    const nowHasReachedStartTime =
+        nowHour > startHour ||
+        (nowHour === startHour && nowMinute >= startMinute);
+
+    const currentDay = Math.min(
+        totalDays,
+        Math.max(
+            1,
+            elapsedDays + (nowHasReachedStartTime ? 1 : 0)
+        )
+    );
 
     return {
         currentDay,
