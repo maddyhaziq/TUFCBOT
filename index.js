@@ -267,9 +267,6 @@ const commands = [
             .setRequired(false)
     ),
 
-            .setRequired(false)
-    ),
-
     new SlashCommandBuilder()
         .setName('sethunt')
         .setDescription('Manually set or correct the PIMD hunt schedule (Admin only)')
