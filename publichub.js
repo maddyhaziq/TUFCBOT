@@ -31,10 +31,6 @@ function accessReply(interaction) {
 async function buildPublicHubPayload() {
     const state = loadState();
     
-const { getActiveHunt, formatSingapore, formatLosAngeles } = require('./huntmonitor');
-const hunt = getActiveHunt();
-
-
 const {
     getActiveHunt,
     getHuntProgress,
