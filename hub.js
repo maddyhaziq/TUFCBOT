@@ -686,17 +686,15 @@ async function handleHubButton(interaction, client) {
     progress
         ? `📅 **Hunt Day:** ${progress.currentDay}/${progress.totalDays}`
         : null,
-    progress
-        ? `🎁 **Expected Drops:** ${(progress.currentDay * 1500).toLocaleString('en-US')}`
-        : null,
+    `🎁 **Expected Drops:** ${((progress?.currentDay ?? 0) * 1500).toLocaleString('en-US')}`,
     progress
         ? `⏳ **Days remaining after today:** ${progress.daysRemaining}`
         : null,
-        `🇺🇸 **Starts (US Eastern):** ${formatEastern(start)}`,
-        `🇸🇬 **Starts (Singapore):** ${formatSingapore(start)}`,
-        `🇺🇸 **Ends (US Eastern):** ${formatEastern(end)}`,
-        `🇸🇬 **Ends (Singapore):** ${formatSingapore(end)}`,
-    ];
+    `🇺🇸 **Starts (US Eastern):** ${formatEastern(start)}`,
+    `🇸🇬 **Starts (Singapore):** ${formatSingapore(start)}`,
+    `🇺🇸 **Ends (US Eastern):** ${formatEastern(end)}`,
+    `🇸🇬 **Ends (Singapore):** ${formatSingapore(end)}`,
+];
 
     if (hunt.box) {
         lines.push(`📦 **Hunt box:** ${hunt.box}`);
