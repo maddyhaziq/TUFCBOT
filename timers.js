@@ -7,6 +7,7 @@ const PARTY_INFO = {
   dog: { name: 'Dog Star', emoji: '🐶' },
   cat: { name: 'Cat Cafe', emoji: '🐱' },
   pizza: { name: 'Pizza Pop Art', emoji: '🍕' },
+  invite: { name: 'Invite Party', emoji: '💌' },
 };
 
 const activeTimers = new Map();
