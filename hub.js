@@ -683,12 +683,15 @@ async function handleHubButton(interaction, client) {
     const end = new Date(hunt.endAt);
 
     const lines = [
-        progress
-            ? `📅 **Hunt Day:** ${progress.currentDay}/${progress.totalDays}`
-            : null,
-        progress
-            ? `⏳ **Days remaining after today:** ${progress.daysRemaining}`
-            : null,
+    progress
+        ? `📅 **Hunt Day:** ${progress.currentDay}/${progress.totalDays}`
+        : null,
+    progress
+        ? `🎁 **Expected Drops:** ${(progress.currentDay * 1500).toLocaleString('en-US')}`
+        : null,
+    progress
+        ? `⏳ **Days remaining after today:** ${progress.daysRemaining}`
+        : null,
         `🇺🇸 **Starts (US Eastern):** ${formatEastern(start)}`,
         `🇸🇬 **Starts (Singapore):** ${formatSingapore(start)}`,
         `🇺🇸 **Ends (US Eastern):** ${formatEastern(end)}`,
