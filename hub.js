@@ -1031,12 +1031,6 @@ async function handleHubTimerMentionSelect(interaction) {
     }
 }
 
-    } catch (error) {
-        console.error('[EC TIMER] Failed to create timer:', error);
-        return interaction.editReply({ content: '❌ I could not create the EC timer. Please try again.', components: [] });
-    }
-}
-
 async function handleHubSelectMenu(interaction, client) {
     if (await handleHubTimerMentionSelect(interaction)) return true;
     if (!interaction.isAnySelectMenu()) return false;
