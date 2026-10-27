@@ -37,7 +37,9 @@ const { startTimers } = require('./timers');
 const { startEventMonitor } = require('./eventmonitor');
 const {
     startHuntMonitor,
-    setManualHunt
+    setManualHunt,
+    formatSingapore,
+    formatLosAngeles
 } = require('./huntmonitor');
 const { startDashboard } = require('./dashboard/server');
 const { startPimdChatMirror } = require('./pimd_chat');
@@ -1159,13 +1161,15 @@ if (subcommand === 'set' || subcommand === 'proset') {
                     flags: 64
                 });
             }
-
-            return await interaction.reply({
+ 
+               return await interaction.reply({
                 content:
                     `✅ **Hunt schedule updated!**\n` +
                     `🐺 Hunt: **${name}**\n` +
-                    `📅 Start: **${start}** at 12 PM Pacific Time\n` +
-                    `📅 End: **${end}** at 12 PM Pacific Time\n` +
+                    `🇸🇬 Start (Singapore): **${formatSingapore(new Date(result.hunt.startAt))}**\n` +
+                    `🇺🇸 Start (Los Angeles): **${formatLosAngeles(new Date(result.hunt.startAt))}**\n` +
+                    `🇸🇬 End (Singapore): **${formatSingapore(new Date(result.hunt.endAt))}**\n` +
+                    `🇺🇸 End (Los Angeles): **${formatLosAngeles(new Date(result.hunt.endAt))}**\n` +
                     `📦 Box: **${box || 'Not specified'}**\n` +
                     `🎁 PPOTD reward: **${reward || 'Not specified'}**`,
                 flags: 64
