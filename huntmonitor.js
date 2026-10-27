@@ -9,6 +9,7 @@ const REMINDER_CHANNEL_IDS = [
     '1362660256987086929', // Admin Channels
     '1413891617957482538', // Members and guests
 ];
+const EASTERN_TZ = 'America/New_York';
 const SINGAPORE_TZ = 'Asia/Singapore';
 const PACIFIC_TZ = 'America/Los_Angeles';
 const STATE_FILE = statePath('hunt_state.json');
@@ -261,6 +262,21 @@ function daysBetweenDateKeys(startKey, endKey) {
     const [sy, sm, sd] = startKey.split('-').map(Number);
     const [ey, em, ed] = endKey.split('-').map(Number);
     return Math.round((Date.UTC(ey, em - 1, ed) - Date.UTC(sy, sm - 1, sd)) / 86400000);
+}
+
+function formatEastern(date) {
+    const formatted = new Intl.DateTimeFormat('en-US', {
+        timeZone: EASTERN_TZ,
+        dateStyle: 'medium',
+        timeStyle: 'short',
+    }).format(date);
+
+    const zone = new Intl.DateTimeFormat('en-US', {
+        timeZone: EASTERN_TZ,
+        timeZoneName: 'short',
+    }).formatToParts(date).find(p => p.type === 'timeZoneName')?.value;
+
+    return `${formatted} (${zone})`;
 }
 
 function formatSingapore(date) {
@@ -591,19 +607,19 @@ function setManualHunt({ name, startDate, endDate, box = null, reward = null, fo
     if (!name?.trim()) return { error: 'Hunt name is required.' };
     if (!startParts || !endParts) return { error: 'Use DD/MM/YYYY for both dates.' };
 
- const startAt = zonedDateTimeToUtc({
+const startAt = zonedDateTimeToUtc({
     ...startParts,
-    hour: 3,
+    hour: 15,
     minute: 0,
     second: 0,
-}, SINGAPORE_TZ);
+}, EASTERN_TZ);
 
 const endAt = zonedDateTimeToUtc({
     ...endParts,
-    hour: 3,
+    hour: 15,
     minute: 0,
     second: 0,
-}, SINGAPORE_TZ);
+}, EASTERN_TZ);
 
     const state = loadState();
     const current = state.activeHunt;
@@ -631,17 +647,93 @@ const endAt = zonedDateTimeToUtc({
     return { hunt, state };
 }
 
+
 function getActiveHunt() {
     return loadState().activeHunt;
 }
 
+function getHuntProgress(hunt = getActiveHunt(), now = new Date()) {
+    if (!hunt?.startAt || !hunt?.endAt) return null;
+
+    const start = new Date(hunt.startAt);
+    const end = new Date(hunt.endAt);
+
+    if (
+        Number.isNaN(start.getTime()) ||
+        Number.isNaN(end.getTime()) ||
+        end < start
+    ) {
+        return null;
+    }
+
+    // Extract the calendar date in US Eastern time.
+    // This automatically follows EST/EDT daylight-saving changes.
+    const easternDate = (date) => {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: EASTERN_TZ,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        }).formatToParts(date);
+
+        const values = Object.fromEntries(
+            parts
+                .filter(part => part.type !== 'literal')
+                .map(part => [part.type, part.value])
+        );
+
+        return `${values.day}/${values.month}/${values.year}`;
+    };
+
+        const toDayNumber = (value) => {
+        const [day, month, year] = value.split('/').map(Number);
+        return Date.UTC(year, month - 1, day) / 86400000;
+};
+    };
+
+    const startDay = toDayNumber(easternDate(start));
+    const endDay = toDayNumber(easternDate(end));
+    const today = toDayNumber(easternDate(now));
+
+    const totalDays = endDay - startDay + 1;
+
+    if (totalDays < 1) return null;
+
+    // Before the hunt starts.
+    if (today < startDay) {
+        return {
+            currentDay: 0,
+            totalDays,
+            daysRemaining: totalDays,
+        };
+    }
+
+    // After the hunt ends.
+    if (today > endDay) {
+        return {
+            currentDay: totalDays,
+            totalDays,
+            daysRemaining: 0,
+        };
+    }
+
+    const currentDay = today - startDay + 1;
+
+    return {
+        currentDay,
+        totalDays,
+        daysRemaining: totalDays - currentDay,
+    };
+}
 
 module.exports = {
     startHuntMonitor,
     setManualHunt,
     getActiveHunt,
+    getHuntProgress,
     scanForum,
     processSchedule,
+    formatEastern,
     formatSingapore,
     formatLosAngeles,
     EVENTS_URL,
