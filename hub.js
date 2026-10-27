@@ -1011,9 +1011,26 @@ async function handleHubTimerMentionSelect(interaction) {
         if (mentionDropper && dropperDiscordId) dropperStatus = `🔔 Dropper mention: <@${dropperDiscordId}>`;
         if (mentionDropper && !dropperDiscordId) dropperStatus = '⚠️ Dropper mention: **Yes**, but no linked Discord account was found for that IGN.';
         const content = `⏱️ **${timer.emoji} ${timer.partyName}** timer set for **${timer.ign}**.\n👤 Creator: <@${interaction.user.id}>\n${dropperStatus}\n⏱️ **${formatDuration(draft.durationMs)}** remaining — drop at <t:${Math.floor(timer.endAt / 1000)}:F> (<t:${Math.floor(timer.endAt / 1000)}:R>).`;
-        const allowedUsers = [interaction.user.id];
-        if (mentionDropper && dropperDiscordId) allowedUsers.push(dropperDiscordId);
-        return interaction.editReply({ content, components: [], allowedMentions: { users: allowedUsers } });
+        
+        const allowedUsers = [...new Set([
+            interaction.user.id,
+            ...(mentionDropper && dropperDiscordId ? [dropperDiscordId] : [])
+        ])];
+
+        return interaction.editReply({
+            content,
+            components: [],
+            allowedMentions: { users: allowedUsers }
+        });
+    } catch (error) {
+        console.error('[EC TIMER] Failed to create timer:', error);
+        return interaction.editReply({
+            content: '❌ I could not create the EC timer. Please try again.',
+            components: []
+        });
+    }
+}
+
     } catch (error) {
         console.error('[EC TIMER] Failed to create timer:', error);
         return interaction.editReply({ content: '❌ I could not create the EC timer. Please try again.', components: [] });
