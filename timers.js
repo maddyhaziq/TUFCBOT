@@ -117,10 +117,21 @@ async function fireTimer(timer) {
     const mentions = [creatorMention, dropperMention].filter(Boolean);
     const mentionText = mentions.length ? `\n👤 **Timer Creator:** ${creatorMention || 'Unknown'}${dropperMention ? `\n🎯 **Dropper:** ${dropperMention}` : `\n🎯 **Dropper:** ${timer.ign}`}` : `\n🎯 **Dropper:** ${timer.ign}`;
 
-    await channel.send({
-      content: `🚨 ${timer.emoji} **${timer.partyName}** — **EC DROP NOW!**${mentionText}`,
-      allowedMentions: mentions.length ? { users: [timer.creatorId, ...(dropperMention ? [timer.dropperDiscordId] : [])] } : { parse: [] },
-    });
+    
+await channel.send({
+  content: `🚨 ${timer.emoji} **${timer.partyName}** — **EC DROP NOW!**${mentionText}`,
+  allowedMentions: mentions.length
+    ? {
+        users: [
+          ...new Set(
+            [timer.creatorId, ...(dropperMention ? [timer.dropperDiscordId] : [])]
+              .filter(Boolean)
+          )
+        ]
+      }
+    : { parse: [] },
+});
+
   } catch (err) {
     console.error(`Failed to send EC timer notification for ${timer.id}:`, err);
   }
