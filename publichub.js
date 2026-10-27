@@ -34,12 +34,40 @@ async function buildPublicHubPayload() {
 const { getActiveHunt, formatSingapore, formatLosAngeles } = require('./huntmonitor');
 const hunt = getActiveHunt();
 
+
+const {
+    getActiveHunt,
+    getHuntProgress,
+    formatEastern,
+    formatSingapore,
+} = require('./huntmonitor');
+
+const hunt = getActiveHunt();
+const progress = getHuntProgress(hunt);
+
 const huntText = hunt
-    ? `🐺 **${hunt.name}**\n` +
-      `🇸🇬 **Starts:** ${formatSingapore(new Date(hunt.startAt))}\n` +
-      `🇺🇸 **Starts:** ${formatLosAngeles(new Date(hunt.startAt))}\n` +
-      `🇸🇬 **Ends:** ${formatSingapore(new Date(hunt.endAt))}\n` +
-      `🇺🇸 **Ends:** ${formatLosAngeles(new Date(hunt.endAt))}`
+    ? (() => {
+        const start = new Date(hunt.startAt);
+        const end = new Date(hunt.endAt);
+        const lines = [
+            `⚔️ **${hunt.name}**`,
+            progress
+                ? `📅 **Hunt Day:** ${progress.currentDay}/${progress.totalDays}`
+                : null,
+            progress
+                ? `⏳ **Days remaining after today:** ${progress.daysRemaining}`
+                : null,
+            `🇺🇸 **Starts (US Eastern):** ${formatEastern(start)}`,
+            `🇸🇬 **Starts (Singapore):** ${formatSingapore(start)}`,
+            `🇺🇸 **Ends (US Eastern):** ${formatEastern(end)}`,
+            `🇸🇬 **Ends (Singapore):** ${formatSingapore(end)}`,
+        ];
+
+        if (hunt.box) lines.push(`📦 **Hunt box:** ${hunt.box}`);
+        if (hunt.reward) lines.push(`💎 **PPOTD Pro-drop reward:** ${hunt.reward}`);
+
+        return lines.filter(Boolean).join('\n');
+    })()
     : 'No active hunt scheduled.';
 
         let clubHealth = {
@@ -247,18 +275,54 @@ const ids = [
     'tufc_public_hunt_reminder',
 ];
     if (!ids.includes(interaction.customId)) return false;
-    if (!publicAllowed(interaction)) { await accessReply(interaction); return true; }
+    if (!publicAllowed(interaction)) { await accessReply(interaction); return true; } 
     if (interaction.customId === 'tufc_public_hunt_reminder') {
-    const { getActiveHunt, formatSingapore, formatLosAngeles } = require('./huntmonitor');
+    const {
+        getActiveHunt,
+        getHuntProgress,
+        formatEastern,
+        formatSingapore,
+    } = require('./huntmonitor');
+
     const hunt = getActiveHunt();
 
     if (!hunt) {
         await interaction.reply({
-            content: '🐺 There is no active hunt scheduled right now.',
+            content: '⚔️ There is no active hunt scheduled right now.',
             flags: 64,
         });
         return true;
     }
+
+    const progress = getHuntProgress(hunt);
+    const start = new Date(hunt.startAt);
+    const end = new Date(hunt.endAt);
+
+    const lines = [
+        progress
+            ? `📅 **Hunt Day:** ${progress.currentDay}/${progress.totalDays}`
+            : null,
+        progress
+            ? `⏳ **Days remaining after today:** ${progress.daysRemaining}`
+            : null,
+        `🇺🇸 **Starts (US Eastern):** ${formatEastern(start)}`,
+        `🇸🇬 **Starts (Singapore):** ${formatSingapore(start)}`,
+        `🇺🇸 **Ends (US Eastern):** ${formatEastern(end)}`,
+        `🇸🇬 **Ends (Singapore):** ${formatSingapore(end)}`,
+    ];
+
+    if (hunt.box) lines.push(`📦 **Hunt box:** ${hunt.box}`);
+    if (hunt.reward) lines.push(`💎 **PPOTD Pro-drop reward:** ${hunt.reward}`);
+
+    const embed = new EmbedBuilder()
+        .setColor(0x5865F2)
+        .setTitle(`⚔️ Hunt Reminder — ${hunt.name}`)
+        .setDescription(lines.filter(Boolean).join('\n'))
+        .setFooter({ text: 'IN CHAOS, WE RESONATE' });
+
+    await interaction.reply({ embeds: [embed], flags: 64 });
+    return true;
+}
 
     const embed = new EmbedBuilder()
         .setColor(0x5865F2)
