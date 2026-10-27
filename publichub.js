@@ -30,6 +30,17 @@ function accessReply(interaction) {
 
 async function buildPublicHubPayload() {
     const state = loadState();
+    
+const { getActiveHunt, formatSingapore, formatLosAngeles } = require('./huntmonitor');
+const hunt = getActiveHunt();
+
+const huntText = hunt
+    ? `🐺 **${hunt.name}**\n` +
+      `🇸🇬 **Starts:** ${formatSingapore(new Date(hunt.startAt))}\n` +
+      `🇺🇸 **Starts:** ${formatLosAngeles(new Date(hunt.startAt))}\n` +
+      `🇸🇬 **Ends:** ${formatSingapore(new Date(hunt.endAt))}\n` +
+      `🇺🇸 **Ends:** ${formatLosAngeles(new Date(hunt.endAt))}`
+    : 'No active hunt scheduled.';
 
         let clubHealth = {
         coreMembers: 0,
@@ -134,6 +145,11 @@ async function buildPublicHubPayload() {
                 )
 .addFields(
     {
+        name: '🐺 Current Hunt',
+        value: huntText,
+        inline: false
+    },
+    {
         name: '🏥 Club Health',
         value:
             `👥 **Members + Admins:** ${clubHealth.coreMembers}/${clubHealth.capacities.core}\n` +
@@ -182,7 +198,14 @@ async function buildPublicHubPayload() {
             .setCustomId('tufc_public_recruitment')
             .setLabel('Join The Unfiltered Corner')
             .setEmoji('💌')
-            .setStyle(ButtonStyle.Primary)
+            .setStyle(ButtonStyle.Primary),
+
+       new ButtonBuilder()
+            .setCustomId('tufc_public_hunt_reminder')
+            .setLabel('Hunt Reminder')
+            .setEmoji('⚔️')
+            .setStyle(ButtonStyle.Success)
+
         )
       ]
    };
@@ -220,10 +243,38 @@ const ids = [
     'tufc_public_assistant',
     'tufc_public_dorm_upgrade',
     'tufc_public_plunder',
-    'tufc_public_recruitment'
+    'tufc_public_recruitment',
+    'tufc_public_hunt_reminder',
 ];
     if (!ids.includes(interaction.customId)) return false;
     if (!publicAllowed(interaction)) { await accessReply(interaction); return true; }
+    if (interaction.customId === 'tufc_public_hunt_reminder') {
+    const { getActiveHunt, formatSingapore, formatLosAngeles } = require('./huntmonitor');
+    const hunt = getActiveHunt();
+
+    if (!hunt) {
+        await interaction.reply({
+            content: '🐺 There is no active hunt scheduled right now.',
+            flags: 64,
+        });
+        return true;
+    }
+
+    const embed = new EmbedBuilder()
+        .setColor(0x5865F2)
+        .setTitle(`🐺 Hunt Reminder — ${hunt.name}`)
+        .setDescription(
+            `🇸🇬 **Starts (Singapore):** ${formatSingapore(new Date(hunt.startAt))}\n` +
+            `🇺🇸 **Starts (Los Angeles):** ${formatLosAngeles(new Date(hunt.startAt))}\n\n` +
+            `🇸🇬 **Ends (Singapore):** ${formatSingapore(new Date(hunt.endAt))}\n` +
+            `🇺🇸 **Ends (Los Angeles):** ${formatLosAngeles(new Date(hunt.endAt))}`
+        )
+        .setFooter({ text: 'IN CHAOS, WE RESONATE' });
+
+    await interaction.reply({ embeds: [embed], flags: 64 });
+    return true;
+}
+
     if (interaction.customId === 'tufc_public_recruitment') {
     await interaction.reply({
         flags: 64,
