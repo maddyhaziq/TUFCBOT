@@ -320,21 +320,6 @@ const ids = [
     return true;
 }
 
-    const embed = new EmbedBuilder()
-        .setColor(0x5865F2)
-        .setTitle(`🐺 Hunt Reminder — ${hunt.name}`)
-        .setDescription(
-            `🇸🇬 **Starts (Singapore):** ${formatSingapore(new Date(hunt.startAt))}\n` +
-            `🇺🇸 **Starts (Los Angeles):** ${formatLosAngeles(new Date(hunt.startAt))}\n\n` +
-            `🇸🇬 **Ends (Singapore):** ${formatSingapore(new Date(hunt.endAt))}\n` +
-            `🇺🇸 **Ends (Los Angeles):** ${formatLosAngeles(new Date(hunt.endAt))}`
-        )
-        .setFooter({ text: 'IN CHAOS, WE RESONATE' });
-
-    await interaction.reply({ embeds: [embed], flags: 64 });
-    return true;
-}
-
     if (interaction.customId === 'tufc_public_recruitment') {
     await interaction.reply({
         flags: 64,
