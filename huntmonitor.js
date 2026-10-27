@@ -23,6 +23,7 @@ let lastForumScanAt = 0;
 function defaultState() {
     return {
         activeHunt: null,
+        upcomingHunts: [],
         seenHuntIds: [],
         lastReminderKey: null,
         lastEndAnnouncementKey: null,
@@ -328,59 +329,103 @@ async function announceHuntStart(hunt) {
 async function scanForum() {
     if (checkInProgress) return;
     checkInProgress = true;
+
     try {
         const listHtml = await fetchHtml(EVENTS_URL);
         const threads = parseThreads(listHtml);
+
         if (!threads.length) {
             console.warn('Hunt tracker: forum returned no parseable event threads.');
             return;
         }
 
         const state = loadState();
+        state.seenHuntIds = Array.isArray(state.seenHuntIds)
+            ? state.seenHuntIds
+            : [];
+        state.upcomingHunts = Array.isArray(state.upcomingHunts)
+            ? state.upcomingHunts
+            : [];
+
         const candidates = [];
+        const now = new Date();
+
         for (const thread of threads.slice(0, 12)) {
             if (state.seenHuntIds.includes(thread.id)) continue;
+            if (state.upcomingHunts.some(item => item.id === thread.id)) continue;
+
             try {
                 const threadHtml = await fetchHtml(thread.url);
                 const text = extractFirstPost(threadHtml);
                 const hunt = extractHuntDetails(thread, text);
+
                 if (hunt) candidates.push(hunt);
-                // Save only confirmed hunt IDs; ordinary events remain eligible for
-                // re-evaluation on a later scan if the forum page content changes.
             } catch (error) {
-                console.warn(`Hunt tracker could not inspect thread ${thread.id}: ${error.message}`);
+                console.warn(
+                    `Hunt tracker could not inspect thread ${thread.id}: ${error.message}`
+                );
             }
         }
 
-        // Oldest detected candidate first; activate the newest one last.
         candidates.sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
+
         for (const hunt of candidates) {
-            const current = state.activeHunt;
-            if (current && current.id === hunt.id && current.manualOverride) {
-                state.seenHuntIds = Array.from(new Set([...state.seenHuntIds, hunt.id])).slice(-200);
+            // Ignore and record expired historical hunts.
+            if (new Date(hunt.endAt) < now) {
+                state.seenHuntIds = Array.from(
+                    new Set([...state.seenHuntIds, hunt.id])
+                ).slice(-200);
                 continue;
             }
-            // A manually corrected active hunt remains protected from automatic
-            // overwrites when the same forum thread is scanned again.
-            if (current && current.id === hunt.id && current.manualOverride) continue;
 
-            if (!current || current.id !== hunt.id) {
-                state.activeHunt = hunt;
-                state.lastReminderKey = null;
-                state.lastEndAnnouncementKey = null;
-                state.seenHuntIds = Array.from(new Set([...state.seenHuntIds, hunt.id])).slice(-200);
-                saveState(state);
-                const now = new Date();
-                // Don't announce a stale historical hunt discovered after recovery.
-                if (new Date(hunt.endAt) >= now) {
-                    await announceHuntStart(hunt);
+            const current = state.activeHunt;
+            const currentStillActive = current && new Date(current.endAt) >= now;
+
+            // Preserve a manual schedule while it is still active.
+            if (current?.manualOverride && currentStillActive) {
+                if (!state.upcomingHunts.some(item => item.id === hunt.id)) {
+                    state.upcomingHunts.push(hunt);
                 }
-            } else {
-                state.activeHunt = { ...current, ...hunt, manualOverride: current.manualOverride || false };
-                state.seenHuntIds = Array.from(new Set([...state.seenHuntIds, hunt.id])).slice(-200);
-                saveState(state);
+                continue;
             }
+
+            // Never replace an active hunt with an upcoming hunt.
+            if (currentStillActive) {
+                if (current.id !== hunt.id &&
+                    !state.upcomingHunts.some(item => item.id === hunt.id)) {
+                    state.upcomingHunts.push(hunt);
+                }
+                continue;
+            }
+
+            // Activate only hunts whose start time has arrived.
+            if (now < new Date(hunt.startAt)) {
+                if (!state.upcomingHunts.some(item => item.id === hunt.id)) {
+                    state.upcomingHunts.push(hunt);
+                }
+                continue;
+            }
+
+            // Announce before marking the hunt as seen, so failures can retry.
+            await announceHuntStart(hunt);
+
+            state.activeHunt = hunt;
+            state.lastReminderKey = null;
+            state.lastEndAnnouncementKey = null;
+            state.seenHuntIds = Array.from(
+                new Set([...state.seenHuntIds, hunt.id])
+            ).slice(-200);
+
+            state.upcomingHunts = state.upcomingHunts.filter(
+                item => item.id !== hunt.id
+            );
+
+            saveState(state);
+            console.log(`🎯 Hunt activated and announced: ${hunt.name}.`);
+            break;
         }
+
+        saveState(state);
     } catch (error) {
         console.error('Hunt forum scan failed (will retry):', error.message);
     } finally {
@@ -390,38 +435,86 @@ async function scanForum() {
 
 async function processSchedule() {
     const state = loadState();
-    const hunt = state.activeHunt;
-    if (!hunt) return;
-
     const now = new Date();
-    const startAt = new Date(hunt.startAt);
-    const endAt = new Date(hunt.endAt);
-    if (now < startAt) return;
 
-    // Reminder runs once per Singapore calendar day, but only while the official
-    // availability window is open. This permits a 3 AM reminder on the final
-    // Singapore date when the Pacific end time falls later that morning.
-    const todayKey = singaporeDateKey(now);
-    const p = singaporeDateParts(now);
-    if (p.hour === 3 && p.minute < 5 && now <= endAt && state.lastReminderKey !== todayKey) {
-        const day = getHuntDay(hunt, now);
-        if (day >= 1) {
-            await sendToBothChannels(buildReminder(hunt, day, now));
-            state.lastReminderKey = todayKey;
-            saveState(state);
-            console.log(`🎯 Hunt reminder sent: ${hunt.name}, Day ${day}.`);
+    state.upcomingHunts = Array.isArray(state.upcomingHunts)
+        ? state.upcomingHunts
+        : [];
+
+    const hunt = state.activeHunt;
+
+    // Process the current hunt if one exists.
+    if (hunt) {
+        const startAt = new Date(hunt.startAt);
+        const endAt = new Date(hunt.endAt);
+
+        if (now < startAt) return;
+
+        const todayKey = singaporeDateKey(now);
+        const p = singaporeDateParts(now);
+
+        // Send one reminder per Singapore calendar day, from 3 AM onward.
+        if (now <= endAt && state.lastReminderKey !== todayKey) {
+            const day = getHuntDay(hunt, now);
+
+            if (day >= 1 && p.hour >= 3) {
+                await sendToBothChannels(buildReminder(hunt, day, now));
+
+                state.lastReminderKey = todayKey;
+                saveState(state);
+                console.log(`🎯 Hunt reminder sent: ${hunt.name}, Day ${day}.`);
+            }
         }
+
+        // Retry the end announcement if both channel sends fail.
+        if (state.lastEndAnnouncementKey !== String(hunt.id)) {
+            await sendToBothChannels({
+                content: `🏁 **HUNT ENDED: ${hunt.name}**\nThe official hunt availability window has ended.\n🔗 [Official forum announcement](${hunt.forumUrl})`,
+                allowedMentions: { parse: [] },
+            });
+
+            state.lastEndAnnouncementKey = String(hunt.id);
+            saveState(state);
+            console.log(`🏁 Hunt end announcement sent: ${hunt.name}.`);
+        }
+
+        // Clear the expired hunt after its end announcement is recorded.
+        state.activeHunt = null;
+        saveState(state);
     }
 
-    if (now > endAt && state.lastEndAnnouncementKey !== String(hunt.id)) {
-        await sendToBothChannels({
-            content: `🏁 **HUNT ENDED: ${hunt.name}**\nThe official hunt availability window has ended.\n🔗 [Official forum announcement](${hunt.forumUrl})`,
-            allowedMentions: { parse: [] },
-        });
-        state.lastEndAnnouncementKey = String(hunt.id);
+    // Promote the earliest eligible queued hunt, even if no active hunt exists.
+
+    const nextHunt = state.upcomingHunts
+        .filter(item => new Date(item.endAt) >= now)
+        .sort((a, b) => new Date(a.startAt) - new Date(b.startAt))[0];
+
+    if (!nextHunt) {
         saveState(state);
-        console.log(`🏁 Hunt end announcement sent: ${hunt.name}.`);
+        return;
     }
+
+    // Wait until the queued hunt's official start time.
+    if (now < new Date(nextHunt.startAt)) {
+        saveState(state);
+        return;
+    }
+
+    // Announce before changing state, so a failed announcement can be retried.
+    await announceHuntStart(nextHunt);
+
+    state.activeHunt = nextHunt;
+    state.upcomingHunts = state.upcomingHunts.filter(
+        item => item.id !== nextHunt.id
+    );
+    state.lastReminderKey = null;
+    state.lastEndAnnouncementKey = null;
+    state.seenHuntIds = Array.from(
+        new Set([...state.seenHuntIds, nextHunt.id])
+    ).slice(-200);
+
+    saveState(state);
+    console.log(`🎯 Upcoming hunt activated: ${nextHunt.name}.`);
 }
 
 async function tick() {
