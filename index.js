@@ -35,7 +35,10 @@ const {
 } = require('./publichub');
 const { startTimers } = require('./timers');
 const { startEventMonitor } = require('./eventmonitor');
-const { startHuntMonitor } = require('./huntmonitor');
+const {
+    startHuntMonitor,
+    setManualHunt
+} = require('./huntmonitor');
 const { startDashboard } = require('./dashboard/server');
 const { startPimdChatMirror } = require('./pimd_chat');
 
@@ -263,6 +266,44 @@ const commands = [
             .setDescription('Optional total tutor value, e.g. 120b')
             .setRequired(false)
     ),
+
+            .setRequired(false)
+    ),
+
+    new SlashCommandBuilder()
+        .setName('sethunt')
+        .setDescription('Manually set or correct the PIMD hunt schedule (Admin only)')
+        
+        .addStringOption(option =>
+            option
+                .setName('name')
+                .setDescription('Hunt name')
+                .setRequired(true)
+        )
+        .addStringOption(option =>
+            option
+                .setName('start')
+                .setDescription('Hunt start date, DD/MM/YYYY')
+                .setRequired(true)
+        )
+        .addStringOption(option =>
+            option
+                .setName('end')
+                .setDescription('Hunt end date, DD/MM/YYYY')
+                .setRequired(true)
+        )
+        .addStringOption(option =>
+            option
+                .setName('box')
+                .setDescription('Hunt box name')
+                .setRequired(false)
+        )
+        .addStringOption(option =>
+            option
+                .setName('reward')
+                .setDescription('PPOTD reward')
+                .setRequired(false)
+        ),
 
 ].map(command => command.toJSON());
 
@@ -1086,6 +1127,59 @@ if (subcommand === 'set' || subcommand === 'proset') {
                 )
                 .setFooter({ text: 'TUFCBOT • PIMD POTD Monitor' })]
         });
+    }
+
+    // =========================
+    // /sethunt
+    // =========================
+   
+    if (interaction.commandName === 'sethunt') {
+        if (!(await isManagementAuthorized(interaction))) {
+            return await interaction.reply({
+                content: '❌ You need one of the TUFC management roles to set the hunt schedule.',
+                flags: 64
+            });
+        }
+
+        const name = interaction.options.getString('name');
+        const start = interaction.options.getString('start');
+        const end = interaction.options.getString('end');
+        const box = interaction.options.getString('box') || '';
+        const reward = interaction.options.getString('reward') || '';
+
+        try {
+            const result = setManualHunt({
+                name,
+                startDate: start,
+                endDate: end,
+                box,
+                reward
+            });
+
+            if (result?.error) {
+                return await interaction.reply({
+                    content: `❌ ${result.error}`,
+                    flags: 64
+                });
+            }
+
+            return await interaction.reply({
+                content:
+                    `✅ **Hunt schedule updated!**\n` +
+                    `🐺 Hunt: **${name}**\n` +
+                    `📅 Start: **${start}** at 12 PM Pacific Time\n` +
+                    `📅 End: **${end}** at 12 PM Pacific Time\n` +
+                    `📦 Box: **${box || 'Not specified'}**\n` +
+                    `🎁 PPOTD reward: **${reward || 'Not specified'}**`,
+                flags: 64
+            });
+        } catch (error) {
+            console.error('Manual hunt schedule update failed:', error);
+            return await interaction.reply({
+                content: '❌ I could not save the hunt schedule. Check the Railway logs.',
+                flags: 64
+            });
+        }
     }
 
     // =========================
