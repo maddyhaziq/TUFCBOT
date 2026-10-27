@@ -186,13 +186,21 @@ function parseAvailability(text) {
     const endParts = parseDateParts(pieces[1]);
     if (!startParts || !endParts) return null;
 
-    const timeMatch = block.match(/\b(1[0-2]|0?\d)(?::([0-5]\d))?\s*(AM|PM)\s+Pacific(?:\s+Time)?\b/i);
-    const hour12 = timeMatch ? Number(timeMatch[1]) % 12 : 12;
-    const minute = timeMatch ? Number(timeMatch[2] || 0) : 0;
-    const hour = timeMatch && timeMatch[3].toUpperCase() === 'PM' ? hour12 + 12 : hour12;
+    
+    const startAt = zonedDateTimeToUtc({
+    ...startParts,
+    hour: 3,
+    minute: 0,
+    second: 0,
+}, SINGAPORE_TZ);
 
-    const startAt = zonedDateTimeToUtc({ ...startParts, hour, minute, second: 0 }, PACIFIC_TZ);
-    const endAt = zonedDateTimeToUtc({ ...endParts, hour, minute, second: 0 }, PACIFIC_TZ);
+    const endAt = zonedDateTimeToUtc({
+    ...endParts,
+    hour: 3,
+    minute: 0,
+    second: 0,
+}, SINGAPORE_TZ);
+
     if (endAt <= startAt) return null;
     return { startAt: startAt.toISOString(), endAt: endAt.toISOString() };
 }
@@ -263,6 +271,20 @@ function formatSingapore(date) {
     }).format(date);
 }
 
+function formatLosAngeles(date) {
+    const formatted = new Intl.DateTimeFormat('en-US', {
+        timeZone: PACIFIC_TZ,
+        dateStyle: 'medium',
+        timeStyle: 'short',
+    }).format(date);
+
+    const zone = new Intl.DateTimeFormat('en-US', {
+        timeZone: PACIFIC_TZ,
+        timeZoneName: 'short',
+    }).formatToParts(date).find(p => p.type === 'timeZoneName')?.value;
+
+    return `${formatted} (${zone})`;
+}
 function getHuntDay(hunt, now = new Date()) {
     const start = new Date(hunt.startAt);
     const startKey = singaporeDateKey(start);
@@ -279,7 +301,11 @@ function buildReminder(hunt, day, now) {
         `🎯 **Daily target per member:** ${DAILY_TARGET.toLocaleString('en-US')} drops`,
         `📊 **Cumulative target per member:** ${cumulative.toLocaleString('en-US')} drops`,
         `⏳ **Days remaining after today:** ${remaining}`,
-        `🗓️ **Ends:** ${formatSingapore(new Date(hunt.endAt))} (Singapore time)`,
+        `🇸🇬 **Starts (Singapore):** ${formatSingapore(new Date(hunt.startAt))}`,
+        `🇺🇸 **Starts (Los Angeles):** ${formatLosAngeles(new Date(hunt.startAt))}`,
+        `🇸🇬 **Ends (Singapore):** ${formatSingapore(new Date(hunt.endAt))}`,
+        `🇺🇸 **Ends (Los Angeles):** ${formatLosAngeles(new Date(hunt.endAt))}`,
+
     ];
     if (hunt.box) lines.push(`📦 **Hunt box:** ${hunt.box}`);
     if (hunt.reward) lines.push(`💎 **PPOTD Pro-drop reward:** ${hunt.reward}`);
@@ -314,8 +340,10 @@ async function announceHuntStart(hunt) {
     const payload = {
         content:
             `🖤 **NEW PIMD HUNT DETECTED: ${hunt.name}**\n` +
-            `📅 **Starts:** ${formatSingapore(new Date(hunt.startAt))} (Singapore time)\n` +
-            `🏁 **Ends:** ${formatSingapore(new Date(hunt.endAt))} (Singapore time)\n` +
+            `📅🇸🇬 **Starts (Singapore):** ${formatSingapore(new Date(hunt.startAt))}\n` +
+            `📅🇺🇸 **Starts (Los Angeles):** ${formatLosAngeles(new Date(hunt.startAt))}\n` +
+            `🏁🇸🇬 **Ends (Singapore):** ${formatSingapore(new Date(hunt.endAt))}\n` +
+            `🏁🇺🇸 **Ends (Los Angeles):** ${formatLosAngeles(new Date(hunt.endAt))}\n` +
             `🎯 **Daily target per member:** ${DAILY_TARGET.toLocaleString('en-US')} drops\n` +
             `📊 **Final cumulative target:** ${Math.max(1, daysBetweenDateKeys(singaporeDateKey(new Date(hunt.startAt)), singaporeDateKey(new Date(hunt.endAt))) + 1) * DAILY_TARGET} drops per member\n` +
             (hunt.box ? `📦 **Hunt box:** ${hunt.box}\n` : '') +
@@ -466,10 +494,18 @@ async function processSchedule() {
             }
         }
 
-        // Retry the end announcement if both channel sends fail.
+        
+        // Keep the current hunt active until its official end time.
+        if (now <= endAt) return;
+
+        // Retry the end announcement if sending fails.
         if (state.lastEndAnnouncementKey !== String(hunt.id)) {
             await sendToBothChannels({
-                content: `🏁 **HUNT ENDED: ${hunt.name}**\nThe official hunt availability window has ended.\n🔗 [Official forum announcement](${hunt.forumUrl})`,
+                content:
+                    `🏁 **HUNT ENDED: ${hunt.name}**\n` +
+                    `The official hunt ended on **${formatSingapore(endAt)} Singapore time**.\n` +
+                    `🇺🇸 **Los Angeles time:** ${formatLosAngeles(endAt)}\n` +
+                    `🔗 [Official forum announcement](${hunt.forumUrl})`,
                 allowedMentions: { parse: [] },
             });
 
@@ -483,8 +519,7 @@ async function processSchedule() {
         saveState(state);
     }
 
-    // Promote the earliest eligible queued hunt, even if no active hunt exists.
-
+    // Promote the earliest eligible queued hunt.
     const nextHunt = state.upcomingHunts
         .filter(item => new Date(item.endAt) >= now)
         .sort((a, b) => new Date(a.startAt) - new Date(b.startAt))[0];
@@ -556,12 +591,19 @@ function setManualHunt({ name, startDate, endDate, box = null, reward = null, fo
     if (!name?.trim()) return { error: 'Hunt name is required.' };
     if (!startParts || !endParts) return { error: 'Use DD/MM/YYYY for both dates.' };
 
-    const startAt = zonedDateTimeToUtc({ ...startParts, hour: 12, minute: 0, second: 0 }, PACIFIC_TZ);
-    const endAt = zonedDateTimeToUtc({ ...endParts, hour: 12, minute: 0, second: 0 }, PACIFIC_TZ);
-    if (endAt < startAt) return { error: 'End date cannot be before the start date.' };
-    if (forumUrl && !/^https:\/\/forum\.partyinmydorm\.com\/threads\//i.test(forumUrl)) {
-        return { error: 'Forum URL must be an official PIMD thread URL.' };
-    }
+ const startAt = zonedDateTimeToUtc({
+    ...startParts,
+    hour: 3,
+    minute: 0,
+    second: 0,
+}, SINGAPORE_TZ);
+
+const endAt = zonedDateTimeToUtc({
+    ...endParts,
+    hour: 3,
+    minute: 0,
+    second: 0,
+}, SINGAPORE_TZ);
 
     const state = loadState();
     const current = state.activeHunt;
@@ -593,11 +635,14 @@ function getActiveHunt() {
     return loadState().activeHunt;
 }
 
+
 module.exports = {
     startHuntMonitor,
     setManualHunt,
     getActiveHunt,
     scanForum,
     processSchedule,
+    formatSingapore,
+    formatLosAngeles,
     EVENTS_URL,
 };
