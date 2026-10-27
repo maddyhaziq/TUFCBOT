@@ -717,31 +717,6 @@ async function handleHubButton(interaction, client) {
     return true;
 }
 
-    const embed = new EmbedBuilder()
-        .setColor(0x5865F2)
-        .setTitle(`🐺 Hunt Reminder — ${hunt.name}`)
-        .setDescription(
-            `🇸🇬 **Starts (Singapore):** ${formatSingapore(new Date(hunt.startAt))}\n` +
-            `🇺🇸 **Starts (Los Angeles):** ${formatLosAngeles(new Date(hunt.startAt))}\n\n` +
-            `🇸🇬 **Ends (Singapore):** ${formatSingapore(new Date(hunt.endAt))}\n` +
-            `🇺🇸 **Ends (Los Angeles):** ${formatLosAngeles(new Date(hunt.endAt))}` +
-            (hunt.box ? `\n\n📦 **Hunt box:** ${hunt.box}` : '') +
-            (hunt.reward ? `\n💎 **PPOTD Pro-drop reward:** ${hunt.reward}` : '')
-        )
-        .setFooter({ text: 'IN CHAOS, WE RESONATE' });
-
-    await interaction.reply({ embeds: [embed], flags: 64 });
-    return true;
-}
-
-    if (id === 'tufc_hub_announcement') {
-        if (!(await isManagementAuthorized(interaction))) {
-            await interaction.reply({ content: '❌ Only authorized TUFC management roles can create announcements.', flags: 64 });
-            return true;
-        }
-        await interaction.showModal(getAnnouncementModal());
-        return true;
-    }
     if (id === 'tufc_hub_admin') { await showAdminMenu(interaction); return true; }
     if (id === 'tufc_admin_discord_role') {
         if (!(await isAdmin(interaction))) return interaction.reply({ content: '❌ Only authorized management roles can use this tool.', ephemeral: true });
