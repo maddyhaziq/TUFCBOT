@@ -431,16 +431,19 @@ async function buildHubEmbed() {
 } = require('./huntmonitor');
     const hunt = getActiveHunt();
     const progress = getHuntProgress(hunt);
-
     
 const huntText = hunt
     ? (() => {
         const start = new Date(hunt.startAt);
         const end = new Date(hunt.endAt);
+
         const lines = [
             `⚔️ **${hunt.name}**`,
             progress
                 ? `📅 **Hunt Day:** ${progress.currentDay}/${progress.totalDays}`
+                : null,
+            progress
+                ? `🎁 **Expected Drops:** ${(progress.currentDay * 1500).toLocaleString('en-US')}`
                 : null,
             progress
                 ? `⏳ **Days remaining after today:** ${progress.daysRemaining}`
@@ -457,7 +460,7 @@ const huntText = hunt
         return lines.filter(Boolean).join('\n');
     })()
     : 'No active hunt scheduled.';
-
+    
     const stats = await getHubStats();
     const expiringText = stats.gpExpiring.length
         ? stats.gpExpiring.slice(0, 8).map(m => `• **${m.IGN || 'Unknown'}** — ${m['GP END DATE'] || 'date unknown'}`).join('\n')
