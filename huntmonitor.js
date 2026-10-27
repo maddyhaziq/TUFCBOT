@@ -688,7 +688,9 @@ function getHuntProgress(hunt = getActiveHunt(), now = new Date()) {
         const toDayNumber = (value) => {
         const [day, month, year] = value.split('/').map(Number);
         return Date.UTC(year, month - 1, day) / 86400000;
-};
+    };
+
+    const startDay = toDayNumber(easternDate(start));
     };
 
     const startDay = toDayNumber(easternDate(start));
