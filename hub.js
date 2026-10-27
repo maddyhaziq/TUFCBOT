@@ -337,16 +337,19 @@ async function showGoldPassMenu(interaction) {
         )
     ]});
 }
+
 async function showTimerMenu(interaction) {
     return interaction.reply({ flags: 64, embeds: [new EmbedBuilder().setTitle('⏱️ EC Party Drop Timers').setDescription('Set a countdown for the person dropping the EC item. When it reaches zero, TUFCBOT posts the drop notification in this channel.')], components: [
         new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('tufc_timer_dog').setLabel('Dog Star').setEmoji('🐶').setStyle(ButtonStyle.Primary),
             new ButtonBuilder().setCustomId('tufc_timer_cat').setLabel('Cat Cafe').setEmoji('🐱').setStyle(ButtonStyle.Primary),
             new ButtonBuilder().setCustomId('tufc_timer_pizza').setLabel('Pizza Pop Art').setEmoji('🍕').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('tufc_timer_invite').setLabel('Invite Party').setEmoji('💌').setStyle(ButtonStyle.Primary),
             new ButtonBuilder().setCustomId('tufc_timer_list').setLabel('Active Timers').setEmoji('⏳').setStyle(ButtonStyle.Secondary),
         )
     ]});
 }
+
 async function showLBHMenu(interaction) {
     return interaction.reply({ flags: 64, embeds: [new EmbedBuilder().setTitle('📣 LBH Call').setDescription('Choose the bar level to call @LBH hitters.')], components: [
         new ActionRowBuilder().addComponents(
@@ -632,16 +635,19 @@ async function showGoldPassMenu(interaction) {
         )
     ]});
 }
+
 async function showTimerMenu(interaction) {
     return interaction.reply({ flags: 64, embeds: [new EmbedBuilder().setTitle('⏱️ EC Party Drop Timers').setDescription('Set a countdown for the person dropping the EC item. When it reaches zero, TUFCBOT posts the drop notification in this channel.')], components: [
         new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('tufc_timer_dog').setLabel('Dog Star').setEmoji('🐶').setStyle(ButtonStyle.Primary),
             new ButtonBuilder().setCustomId('tufc_timer_cat').setLabel('Cat Cafe').setEmoji('🐱').setStyle(ButtonStyle.Primary),
             new ButtonBuilder().setCustomId('tufc_timer_pizza').setLabel('Pizza Pop Art').setEmoji('🍕').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('tufc_timer_invite').setLabel('Invite Party').setEmoji('💌').setStyle(ButtonStyle.Primary),
             new ButtonBuilder().setCustomId('tufc_timer_list').setLabel('Active Timers').setEmoji('⏳').setStyle(ButtonStyle.Secondary),
         )
     ]});
 }
+
 async function showLBHMenu(interaction) {
     return interaction.reply({ flags: 64, embeds: [new EmbedBuilder().setTitle('📣 LBH Call').setDescription('Choose the bar level to call @LBH hitters.')], components: [
         new ActionRowBuilder().addComponents(
