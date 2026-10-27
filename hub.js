@@ -423,6 +423,16 @@ async function getHubStats() {
 
 async function buildHubEmbed() {
     const state = loadState();
+    const { getActiveHunt, formatSingapore, formatLosAngeles } = require('./huntmonitor');
+    const hunt = getActiveHunt();
+
+    const huntText = hunt
+    ? `🐺 **${hunt.name}**\n` +
+      `🇸🇬 **Starts:** ${formatSingapore(new Date(hunt.startAt))}\n` +
+      `🇺🇸 **Starts:** ${formatLosAngeles(new Date(hunt.startAt))}\n` +
+      `🇸🇬 **Ends:** ${formatSingapore(new Date(hunt.endAt))}\n` +
+      `🇺🇸 **Ends:** ${formatLosAngeles(new Date(hunt.endAt))}`
+    : 'No active hunt.';
     const stats = await getHubStats();
     const expiringText = stats.gpExpiring.length
         ? stats.gpExpiring.slice(0, 8).map(m => `• **${m.IGN || 'Unknown'}** — ${m['GP END DATE'] || 'date unknown'}`).join('\n')
@@ -434,8 +444,8 @@ async function buildHubEmbed() {
         .setTitle('🦆 TUFCBOT • Member Hub')
         .setDescription('Your PIMD tools and club management in one place.\nUse the buttons below to open a tool.')
         .addFields(
+            { name: '⚔️ CURRENT HUNT', value: huntText, inline: false },
             { name: '🏹 TODAY\'S PARTIES', value: `🎯 **POTD:** ${state?.potd || 'Not found yet'}\n🔥 **PPOTD:** ${state?.ppotd || 'Not found yet'}`, inline: false },
-            { name: '🏥 CLUB HEALTH', value: `👥 **Members + Admins:** ${stats.coreMembers}/${stats.capacities.core}\n🦋 **Guests:** ${stats.guests}/${stats.capacities.guests}\n📊 **Total:** ${stats.totalMembers}/${stats.capacities.total}`, inline: false },
             { name: '🎟️ GP EXPIRING SOON', value: expiringText, inline: false },
             { name: '📋 CLUB SNAPSHOT', value: `👑 **Admins:** ${stats.admins}\n👥 **Club Members:** ${stats.clubMembers}\n🏦 **Bank:** ${stats.bank}\n🛡️ **Perms:** ${stats.coreMembers}\n🔗 **Discord Linked:** ${stats.discordLinked}/${stats.linkableMembers}`, inline: false },
             { name: '⚠️ ATTENTION', value: attentionText, inline: false },
@@ -450,18 +460,23 @@ function buildHubRows() {
         new ButtonBuilder().setCustomId('tufc_hub_goldpass').setLabel('Gold Passes').setEmoji('💳').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId('tufc_hub_timers').setLabel('EC Party Timers').setEmoji('⏱️').setStyle(ButtonStyle.Primary),
     );
+
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('tufc_hub_lbh').setLabel('LBH Call').setEmoji('📣').setStyle(ButtonStyle.Danger),
         new ButtonBuilder().setCustomId('tufc_hub_potd').setLabel('POTD Lookup').setEmoji('🎯').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('tufc_hub_announcement').setLabel('Announcement').setEmoji('📢').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId('tufc_hub_admin').setLabel('Admin').setEmoji('🛠️').setStyle(ButtonStyle.Danger),
     );
+
     const row3 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('tufc_hub_hunt_reminder').setLabel('Hunt Reminder').setEmoji('🐺').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('tufc_hub_dorm_upgrade').setLabel('New Dorm Tower Upgrade Calculator').setEmoji('🏢').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('tufc_hub_link_discord').setLabel('Link Discord').setEmoji('🔗').setStyle(ButtonStyle.Secondary),
     );
+
     return [row1, row2, row3];
 }
+
 async function buildHubPayload() { return { embeds: [await buildHubEmbed()], components: buildHubRows() }; }
 
 const HUB_STATE_DIR = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data');
@@ -619,8 +634,36 @@ async function handleHubButton(interaction, client) {
     if (!interaction.isButton()) return false;
     const id = interaction.customId;
     if (!id.startsWith('tufc_')) return false;
+    if (id === 'tufc_hub_member') { await showMemberMenu(interaction); return true; }  
+    if (id === 'tufc_hub_hunt_reminder') {
+    const { getActiveHunt, formatSingapore, formatLosAngeles } = require('./huntmonitor');
+    const hunt = getActiveHunt();
 
-    if (id === 'tufc_hub_member') { await showMemberMenu(interaction); return true; }
+    if (!hunt) {
+        await interaction.reply({
+            content: '🐺 There is no active hunt scheduled right now.',
+            flags: 64,
+        });
+        return true;
+    }
+
+    const embed = new EmbedBuilder()
+        .setColor(0x5865F2)
+        .setTitle(`🐺 Hunt Reminder — ${hunt.name}`)
+        .setDescription(
+            `🇸🇬 **Starts (Singapore):** ${formatSingapore(new Date(hunt.startAt))}\n` +
+            `🇺🇸 **Starts (Los Angeles):** ${formatLosAngeles(new Date(hunt.startAt))}\n\n` +
+            `🇸🇬 **Ends (Singapore):** ${formatSingapore(new Date(hunt.endAt))}\n` +
+            `🇺🇸 **Ends (Los Angeles):** ${formatLosAngeles(new Date(hunt.endAt))}` +
+            (hunt.box ? `\n\n📦 **Hunt box:** ${hunt.box}` : '') +
+            (hunt.reward ? `\n💎 **PPOTD Pro-drop reward:** ${hunt.reward}` : '')
+        )
+        .setFooter({ text: 'IN CHAOS, WE RESONATE' });
+
+    await interaction.reply({ embeds: [embed], flags: 64 });
+    return true;
+}
+
     if (id === 'tufc_hub_announcement') {
         if (!(await isManagementAuthorized(interaction))) {
             await interaction.reply({ content: '❌ Only authorized TUFC management roles can create announcements.', flags: 64 });
