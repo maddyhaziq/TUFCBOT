@@ -1,7 +1,16 @@
 const fs = require('fs');
 const { statePath } = require('./storage');
 
-const THREAD_URL = 'https://forum.partyinmydorm.com/threads/%F0%9F%8C%92parties-of-the-day%F0%9F%8C%92.110277/';
+// The thread ID is the stable part of the URL. XenForo redirects any old or
+// wrong slug to the current canonical address, so the bot no longer depends on
+// the moon emojis in the thread title (the title now shows replacement
+// characters after the forum outage).
+const THREAD_ID = '110277';
+const THREAD_URLS = [
+    `https://forum.partyinmydorm.com/threads/${THREAD_ID}/`,
+    `https://forum.partyinmydorm.com/threads/parties-of-the-day.${THREAD_ID}/`,
+    `https://forum.partyinmydorm.com/threads/%F0%9F%8C%92parties-of-the-day%F0%9F%8C%92.${THREAD_ID}/`,
+];
 const STATE_FILE = statePath('potd_state.json');
 const CHECK_INTERVAL = 2 * 60 * 1000; // 2 minutes
 const BRUNEI_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -99,26 +108,109 @@ function htmlToText(html) {
     );
 }
 
-async function fetchText(url) {
-    const response = await fetch(url, {
-        headers: {
-            'User-Agent': 'TUFCBOT/1.0 POTD Monitor',
-            'Accept': 'text/html,application/xhtml+xml',
-        },
-        redirect: 'follow',
-    });
+const REQUEST_TIMEOUT_MS = 20 * 1000;
+const MAX_ATTEMPTS = 3;
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-    if (!response.ok) {
-        throw new Error(`Forum request failed: HTTP ${response.status}`);
+function describeError(error) {
+    const cause = error && error.cause
+        ? ` (${error.cause.code || error.cause.message})`
+        : '';
+    return `${error.message}${cause}`;
+}
+
+function looksLikeBotChallenge(status, body) {
+    return [403, 429, 503].includes(status) &&
+        /just a moment|cf-chl|attention required|enable javascript and cookies/i.test(body);
+}
+
+// Fetches one forum URL. Retries temporary problems (timeouts, 5xx errors such
+// as a PHP outage, 429) and reports the final URL after redirects.
+async function fetchPage(url) {
+    let lastError;
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+            const response = await fetch(url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (compatible; TUFCBOT/1.1; PIMD club POTD monitor)',
+                    'Accept': 'text/html,application/xhtml+xml',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                },
+                redirect: 'follow',
+                signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+            });
+
+            const body = await response.text();
+
+            if (looksLikeBotChallenge(response.status, body)) {
+                const error = new Error(
+                    `Forum is showing a bot-protection challenge (HTTP ${response.status}).`
+                );
+                error.permanent = true;
+                throw error;
+            }
+
+            if (!response.ok) {
+                const error = new Error(`Forum request failed: HTTP ${response.status} for ${url}`);
+                // Other 4xx errors will not fix themselves by retrying.
+                error.permanent =
+                    response.status >= 400 &&
+                    response.status < 500 &&
+                    response.status !== 429;
+                throw error;
+            }
+
+            return {
+                html: body,
+                finalUrl: response.url || url,
+                status: response.status,
+            };
+        } catch (error) {
+            lastError = error;
+
+            if (error.permanent || attempt === MAX_ATTEMPTS) {
+                break;
+            }
+
+            console.warn(`⚠️ POTD fetch attempt ${attempt} failed: ${describeError(error)}. Retrying...`);
+            await sleep(attempt * 2000);
+        }
     }
 
-    return await response.text();
+    throw new Error(describeError(lastError));
+}
+
+async function fetchText(url) {
+    return (await fetchPage(url)).html;
 }
 
 function getLastPageNumber(html) {
+    const found = [];
     const text = htmlToText(html);
-    const match = text.match(/Page\s+\d+\s+of\s+(\d+)/i);
-    return match ? Number(match[1]) : null;
+
+    // "Page 1 of 11076"
+    const pageOf = text.match(/Page\s+\d+\s+of\s+(\d+)/i);
+    if (pageOf) found.push(Number(pageOf[1]));
+
+    // XenForo simple navigation: "1 of 11076"
+    for (const match of html.matchAll(/>\s*\d+\s+of\s+(\d+)\s*</gi)) {
+        found.push(Number(match[1]));
+    }
+
+    // Page links for this thread: ".../110277/page-11076"
+    const linkPattern = new RegExp(`${THREAD_ID}/page-(\\d+)`, 'g');
+    for (const match of html.matchAll(linkPattern)) {
+        found.push(Number(match[1]));
+    }
+
+    // data-last="11076" (XenForo page navigation)
+    for (const match of html.matchAll(/data-last="(\d+)"/gi)) {
+        found.push(Number(match[1]));
+    }
+
+    const valid = found.filter(n => Number.isInteger(n) && n > 0);
+    return valid.length ? Math.max(...valid) : null;
 }
 
 function normalizePartyName(name) {
@@ -308,19 +400,71 @@ function parseTestingAndResults(text) {
     return { testing, failed };
 }
 
-async function fetchLatestForumPage() {
-    const rootHtml = await fetchText(THREAD_URL);
-    const lastPage = getLastPageNumber(rootHtml);
+async function fetchRootPage() {
+    let lastError;
 
-    if (!lastPage) {
-        throw new Error('Could not determine the latest POTD forum page.');
+    for (const url of THREAD_URLS) {
+        try {
+            return await fetchPage(url);
+        } catch (error) {
+            lastError = error;
+            console.warn(`⚠️ POTD thread URL failed: ${url} - ${error.message}`);
+
+            // The other URLs would be blocked in exactly the same way.
+            if (/bot-protection/i.test(error.message)) break;
+        }
     }
 
-    const latestUrl = `${THREAD_URL}page-${lastPage}`;
-    const html = await fetchText(latestUrl);
+    throw lastError || new Error('No POTD thread URL could be loaded.');
+}
+
+// Turns the final (canonical) URL into ".../threads/<slug>.110277/".
+function threadBaseFrom(finalUrl) {
+    const base = finalUrl
+        .split('#')[0]
+        .split('?')[0]
+        .replace(/page-\d+\/?$/i, '');
+
+    return base.endsWith('/') ? base : `${base}/`;
+}
+
+async function fetchLatestForumPage() {
+    const root = await fetchRootPage();
+    const base = threadBaseFrom(root.finalUrl);
+
+    let lastPage = getLastPageNumber(root.html);
+
+    if (!lastPage) {
+        // The page-count markup was not found. Ask the forum itself where its
+        // newest post is: XenForo redirects ".../latest" to ".../page-N".
+        try {
+            const latest = await fetchPage(`${base}latest`);
+            const match = latest.finalUrl
+                .split('#')[0]
+                .match(/page-(\d+)\/?$/i);
+
+            if (match) lastPage = Number(match[1]);
+        } catch (error) {
+            console.warn(`⚠️ POTD "latest" fallback failed: ${error.message}`);
+        }
+    }
+
+    if (!lastPage) {
+        // Never guess here. Reading page 1 would return very old results.
+        const snippet = htmlToText(root.html).slice(0, 200).replace(/\s+/g, ' ');
+        throw new Error(
+            `Could not determine the latest POTD forum page. Forum answered with: "${snippet}"`
+        );
+    }
+
+    const latestUrl = `${base}page-${lastPage}`;
+    const { html } = await fetchPage(latestUrl);
+
+    console.log(`🔎 POTD forum: reading newest page ${lastPage} (${latestUrl})`);
 
     return {
         page: lastPage,
+        base,
         url: latestUrl,
         html,
         text: htmlToText(html),
@@ -554,4 +698,9 @@ module.exports = {
     loadState,
     saveState,
     getCycleKey,
+    // Exported for diagnostics and testing.
+    fetchLatestForumPage,
+    parsePOTDFromTemplate,
+    getLastPageNumber,
+    htmlToText,
 };
