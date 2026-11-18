@@ -76,21 +76,27 @@ function decodeHtml(value) {
 }
 
 function stripTags(value) {
-    // XenForo posts may include lightbox/slideshow initialisation scripts and
-    // JSON-like metadata. Decode entities first so encoded lightbox JSON is
-    // removed too, then keep only human-readable post text.
-    return decodeHtml(String(value || ''))
+    // XenForo injects lightbox phrase dictionaries inside script tags. Remove
+    // non-content blocks BEFORE decoding entities so their JSON can never leak
+    // into the Discord preview, even when the markup is entity-escaped.
+    let clean = String(value || '')
+        .replace(/<!--[\s\S]*?-->/g, ' ')
+        .replace(/<(script|style|template|noscript)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ');
+
+    clean = decodeHtml(clean)
         .replace(/<!--[\s\S]*?-->/g, ' ')
         .replace(/<(script|style|template|noscript)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
-        .replace(/\{[^{}]{0,2500}"lightbox_(?:close|next|previous|error|start_slideshow|stop_slideshow|full_screen|thumbnails|download|share|zoom|new_window|toggle_sidebar)"[\s\S]*?\}/gi, ' ')
+        .replace(/\{\s*"lightbox_(?:close|next|previous|error|start_slideshow|stop_slideshow|full_screen|thumbnails|download|share|zoom|new_window|toggle_sidebar)"[\s\S]*?\}/gi, ' ')
         .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<\/(?:p|div|li|h[1-6])\s*>/gi, '\n')
+        .replace(/<\/(?:p|div|li|h[1-6]|blockquote)\s*>/gi, '\n')
         .replace(/<[^>]+>/g, ' ')
+        .replace(/&(?:quot|amp|lt|gt|nbsp);/gi, ' ')
         .replace(/[ \t]+/g, ' ')
         .replace(/\s*\n\s*/g, '\n')
         .replace(/\n{2,}/g, '\n')
-        .replace(/\s+/g, ' ')
         .trim();
+
+    return clean;
 }
 
 function absoluteUrl(href) {
@@ -146,18 +152,24 @@ function parseEventThreads(html) {
 }
 
 function extractFirstPostHtml(html) {
-    // Prefer the first XenForo message body. Keeping the HTML lets us recover
-    // the images that belong to the event post instead of unrelated forum icons.
-    const selectors = [
-        /<div[^>]+class=["'][^"']*bbWrapper[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
-        /<article[^>]*>([\s\S]*?)<\/article>/i
-    ];
-
-    for (const re of selectors) {
-        const match = html.match(re);
-        if (match && match[1]) return match[1];
+    // Find the first XenForo message body and balance nested divs. A simple
+    // non-greedy </div> match truncates posts that contain nested containers.
+    const opening = /<div\b(?=[^>]*\bclass\s*=\s*["'][^"']*\bbbWrapper\b[^"']*["'])[^>]*>/i.exec(html);
+    if (opening) {
+        const start = opening.index;
+        const tokenRe = /<div\b[^>]*>|<\/div\s*>/gi;
+        tokenRe.lastIndex = start;
+        let depth = 0;
+        let token;
+        while ((token = tokenRe.exec(html))) {
+            if (/^<div\b/i.test(token[0])) depth++;
+            else depth--;
+            if (depth === 0) return html.slice(start, tokenRe.lastIndex);
+        }
     }
-    return '';
+
+    const article = html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i);
+    return article?.[1] || '';
 }
 
 function extractFirstPost(html) {
@@ -438,6 +450,37 @@ async function checkForumEvents({ initial = false } = {}) {
     }
 }
 
+async function refreshEvents({ limit = 4 } = {}) {
+    if (running) return { ok: false, message: 'An event scan is already running.' };
+    if (!clientRef) return { ok: false, message: 'The event monitor is not ready.' };
+
+    try {
+        const html = await fetchHtml(EVENTS_URL);
+        const events = parseEventThreads(html).slice(0, Math.max(1, Math.min(10, Number(limit) || 4)));
+        if (!events.length) return { ok: false, message: 'No forum event threads could be read.' };
+
+        // Explicit admin refresh: clear the seen markers for the latest events.
+        // The normal Discord-title check still prevents reposting an event that
+        // is already present in the destination channel.
+        const state = loadState();
+        const ids = new Set(events.map(event => String(event.id)));
+        state.seen = state.seen.filter(id => !ids.has(String(id)));
+        state.initialized = true;
+        saveState(state);
+
+        await checkForumEvents();
+        return {
+            ok: true,
+            requested: events.length,
+            titles: events.map(event => event.title),
+            message: `Checked the latest ${events.length} forum events. Events already present in Discord were skipped; deleted/missing posts were recreated.`
+        };
+    } catch (error) {
+        console.error('Manual forum event refresh failed:', error);
+        return { ok: false, message: error.message };
+    }
+}
+
 function startEventMonitor(client) {
     clientRef = client;
     if (intervalHandle) clearInterval(intervalHandle);
@@ -456,6 +499,7 @@ function startEventMonitor(client) {
 module.exports = {
     startEventMonitor,
     checkForumEvents,
+    refreshEvents,
     EVENT_CHANNEL_ID,
     EVENTS_URL
 };
