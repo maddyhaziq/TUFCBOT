@@ -7,6 +7,8 @@ const { ChannelType } = require('discord.js');
 const EVENTS_URL = 'https://forum.partyinmydorm.com/forums/events.18/';
 const EVENT_CHANNEL_ID = '1433259589209428091';
 const CHECK_INTERVAL = 5 * 60 * 1000;
+// Ignore bumped threads based on the ORIGINAL first-post date.
+const MAX_EVENT_AGE_DAYS = Math.max(1, Number(process.env.TUFC_EVENT_MAX_AGE_DAYS) || 60);
 const STATE_FILE = statePath('event_state.json');
 
 let clientRef = null;
@@ -99,6 +101,62 @@ function stripTags(value) {
     return clean;
 }
 
+
+function extractBalancedDiv(html, startIndex) {
+    const tokenRe = /<div\b[^>]*>|<\/div\s*>/gi;
+    tokenRe.lastIndex = startIndex;
+    let depth = 0;
+    let opened = false;
+    let match;
+    while ((match = tokenRe.exec(html))) {
+        if (/^<\/div/i.test(match[0])) {
+            depth--;
+            if (opened && depth === 0) return html.slice(startIndex, tokenRe.lastIndex - match[0].length);
+        } else {
+            depth++;
+            opened = true;
+        }
+    }
+    return '';
+}
+
+function extractFirstPostTimestamp(html) {
+    // XenForo's message--post contains the timestamp of the original post.
+    // Do not use the thread-list activity timestamp: replies can bump old posts.
+    const marker = html.search(/<(?:article|div)\b[^>]*class=["'][^"']*message--post[^"']*["']/i);
+    if (marker < 0) return null;
+    const scope = html.slice(marker, marker + 120000);
+    const timeTag = scope.match(/<time\b[^>]*datetime=["']([^"']+)["']/i);
+    if (timeTag) {
+        const parsed = Date.parse(decodeHtml(timeTag[1]));
+        if (Number.isFinite(parsed)) return parsed;
+    }
+    const unix = scope.match(/\bdata-time=["'](\d{9,13})["']/i)
+        || scope.match(/\bdata-timestamp=["'](\d{9,13})["']/i);
+    if (unix) {
+        const value = Number(unix[1]);
+        return value > 9999999999 ? value : value * 1000;
+    }
+    return null;
+}
+
+async function validateRecentEvent(event) {
+    const threadHtml = await fetchHtml(event.url);
+    const postedAt = extractFirstPostTimestamp(threadHtml);
+    if (!postedAt) {
+        console.warn(`⏭️ Skipping PIMD thread ${event.id} (${event.title}): original post date could not be verified.`);
+        return null; // Fail closed rather than mistaking a bumped old thread for new.
+    }
+    const ageDays = (Date.now() - postedAt) / 86400000;
+    if (ageDays < -1 || ageDays > MAX_EVENT_AGE_DAYS) {
+        console.log(`⏭️ Skipping PIMD thread ${event.id} (${event.title}): original post is ${ageDays.toFixed(1)} days old (limit ${MAX_EVENT_AGE_DAYS}).`);
+        return null;
+    }
+    event.postedAt = postedAt;
+    event.threadHtml = threadHtml;
+    return event;
+}
+
 function absoluteUrl(href) {
     try {
         const value = decodeHtml(href).trim();
@@ -152,24 +210,16 @@ function parseEventThreads(html) {
 }
 
 function extractFirstPostHtml(html) {
-    // Find the first XenForo message body and balance nested divs. A simple
-    // non-greedy </div> match truncates posts that contain nested containers.
-    const opening = /<div\b(?=[^>]*\bclass\s*=\s*["'][^"']*\bbbWrapper\b[^"']*["'])[^>]*>/i.exec(html);
-    if (opening) {
-        const start = opening.index;
-        const tokenRe = /<div\b[^>]*>|<\/div\s*>/gi;
-        tokenRe.lastIndex = start;
-        let depth = 0;
-        let token;
-        while ((token = tokenRe.exec(html))) {
-            if (/^<div\b/i.test(token[0])) depth++;
-            else depth--;
-            if (depth === 0) return html.slice(start, tokenRe.lastIndex);
-        }
+    // Balance nested divs: XenForo post bodies contain nested containers, so a
+    // non-greedy match truncates content at the first inner closing div.
+    const wrapperRe = /<div\b[^>]*class=["'][^"']*\bbbWrapper\b[^"']*["'][^>]*>/i;
+    const match = wrapperRe.exec(html);
+    if (match) {
+        const balanced = extractBalancedDiv(html, match.index);
+        if (balanced) return balanced;
     }
-
     const article = html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i);
-    return article?.[1] || '';
+    return article ? article[1] : '';
 }
 
 function extractFirstPost(html) {
@@ -290,7 +340,7 @@ async function buildEventEmbed(event) {
     let imageUrls = [];
 
     try {
-        const threadHtml = await fetchHtml(event.url);
+        const threadHtml = event.threadHtml || await fetchHtml(event.url);
         description = shorten(extractFirstPost(threadHtml));
         imageUrls = extractImageUrls(threadHtml);
     } catch (error) {
@@ -367,7 +417,16 @@ async function checkForumEvents({ initial = false } = {}) {
 
     try {
         const html = await fetchHtml(EVENTS_URL);
-        const events = parseEventThreads(html);
+        const candidates = parseEventThreads(html);
+        const events = [];
+        for (const candidate of candidates) {
+            const valid = await validateRecentEvent(candidate).catch(error => {
+                console.warn(`Could not validate PIMD event ${candidate.id}: ${error.message}`);
+                return null;
+            });
+            if (valid) events.push(valid);
+            if (events.length >= 12) break;
+        }
         if (!events.length) {
             console.warn('Forum event monitor found no event threads.');
             console.warn(`Forum page contained ${ (html.match(/threads(?:\/|\b)/gi) || []).length } thread references.`);
@@ -456,8 +515,18 @@ async function refreshEvents({ limit = 4 } = {}) {
 
     try {
         const html = await fetchHtml(EVENTS_URL);
-        const events = parseEventThreads(html).slice(0, Math.max(1, Math.min(10, Number(limit) || 4)));
-        if (!events.length) return { ok: false, message: 'No forum event threads could be read.' };
+        const candidates = parseEventThreads(html);
+        const events = [];
+        const wanted = Math.max(1, Math.min(10, Number(limit) || 4));
+        for (const candidate of candidates) {
+            const valid = await validateRecentEvent(candidate).catch(error => {
+                console.warn(`Could not validate PIMD event ${candidate.id}: ${error.message}`);
+                return null;
+            });
+            if (valid) events.push(valid);
+            if (events.length >= wanted) break;
+        }
+        if (!events.length) return { ok: false, message: `No verifiable event announcements within the last ${MAX_EVENT_AGE_DAYS} days were found. Old bumped threads are ignored.` };
 
         // Explicit admin refresh: clear the seen markers for the latest events.
         // The normal Discord-title check still prevents reposting an event that
@@ -473,7 +542,7 @@ async function refreshEvents({ limit = 4 } = {}) {
             ok: true,
             requested: events.length,
             titles: events.map(event => event.title),
-            message: `Checked the latest ${events.length} forum events. Events already present in Discord were skipped; deleted/missing posts were recreated.`
+            message: `Checked ${events.length} valid event announcement(s) from the last ${MAX_EVENT_AGE_DAYS} days. Old bumped threads were ignored. Events already present in Discord were skipped; deleted/missing posts were recreated.`
         };
     } catch (error) {
         console.error('Manual forum event refresh failed:', error);
@@ -501,5 +570,8 @@ module.exports = {
     checkForumEvents,
     refreshEvents,
     EVENT_CHANNEL_ID,
-    EVENTS_URL
+    EVENTS_URL,
+    MAX_EVENT_AGE_DAYS,
+    extractFirstPostTimestamp,
+    stripTags
 };
