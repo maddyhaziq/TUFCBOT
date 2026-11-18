@@ -37,6 +37,7 @@ const { startTimers } = require('./timers');
 const { startEventMonitor } = require('./eventmonitor');
 const {
     startHuntMonitor,
+    refreshHuntMonitor,
     setManualHunt,
     formatSingapore,
     formatLosAngeles
@@ -268,6 +269,15 @@ const commands = [
             .setDescription('Optional total tutor value, e.g. 120b')
             .setRequired(false)
     ),
+
+    new SlashCommandBuilder()
+        .setName('hunt')
+        .setDescription('Hunt tracker tools')
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('refresh')
+                .setDescription('Immediately rescan the PIMD forum for hunt announcements (Admin only)')
+        ),
 
     new SlashCommandBuilder()
         .setName('sethunt')
@@ -1126,6 +1136,36 @@ if (subcommand === 'set' || subcommand === 'proset') {
                 )
                 .setFooter({ text: 'TUFCBOT • PIMD POTD Monitor' })]
         });
+    }
+
+    // =========================
+    // /hunt refresh
+    // =========================
+    if (interaction.commandName === 'hunt' && interaction.options.getSubcommand() === 'refresh') {
+        if (!(await isManagementAuthorized(interaction))) {
+            return await interaction.reply({
+                content: '❌ You need one of the TUFC management roles to refresh the hunt tracker.',
+                flags: 64
+            });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+        const result = await refreshHuntMonitor();
+        if (!result?.ok) {
+            return await interaction.editReply(`❌ Hunt refresh failed: ${result?.message || result?.error || 'The forum could not be read.'}`);
+        }
+
+        const detected = result.candidates || [];
+        const detectedText = detected.length
+            ? detected.map(h => `• **${h.name}** — ${formatSingapore(new Date(h.startAt))} to ${formatSingapore(new Date(h.endAt))}${h.box ? ` — ${h.box}` : ''}${h.reward ? ` — ${h.reward}` : ''}`).join('\n')
+            : 'No newly detected hunt announcements. Existing active/upcoming hunts remain unchanged.';
+
+        return await interaction.editReply(
+            `🔄 **Hunt forum refresh completed.**\n` +
+            `Threads checked: **${result.threads}** | Hunts detected: **${result.detected}** | Queued: **${result.queued}**\n` +
+            detectedText +
+            (result.activated ? `\n\n✅ Activated: **${result.activated.name}**` : '')
+        );
     }
 
     // =========================
