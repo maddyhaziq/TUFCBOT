@@ -26,6 +26,7 @@ function defaultState() {
         activeHunt: null,
         upcomingHunts: [],
         seenHuntIds: [],
+        incompleteNotifiedIds: [],
         lastReminderKey: null,
         lastEndAnnouncementKey: null,
     };
@@ -39,6 +40,7 @@ function loadState() {
             ...defaultState(),
             ...parsed,
             seenHuntIds: Array.isArray(parsed.seenHuntIds) ? parsed.seenHuntIds.map(String) : [],
+            incompleteNotifiedIds: Array.isArray(parsed.incompleteNotifiedIds) ? parsed.incompleteNotifiedIds.map(String) : [],
         };
     } catch (error) {
         console.error('Hunt tracker state load failed:', error);
@@ -122,16 +124,25 @@ function parseThreads(html) {
 }
 
 function extractFirstPost(html) {
-    const patterns = [
-        /<div[^>]+class=["'][^"']*\bb bWrapper\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
-        /<div[^>]+class=["'][^"']*\bbbWrapper\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
-        /<article[^>]*>([\s\S]*?)<\/article>/i,
-    ];
-    for (const pattern of patterns) {
-        const match = html.match(pattern);
-        if (match?.[1]) return htmlToText(match[1]);
+    const source = String(html || '');
+    const open = /<div\b[^>]*class=["'][^"']*\bbbWrapper\b[^"']*["'][^>]*>/i.exec(source);
+    if (open) {
+        // XenForo post bodies can contain nested divs. Match the corresponding
+        // closing div instead of stopping at the first nested closing tag.
+        const start = open.index + open[0].length;
+        const divToken = /<\/?div\b[^>]*>/gi;
+        divToken.lastIndex = start;
+        let depth = 1;
+        let token;
+        while ((token = divToken.exec(source))) {
+            if (/^<\s*div\b/i.test(token[0])) depth++;
+            else depth--;
+            if (depth === 0) return htmlToText(source.slice(start, token.index));
+        }
     }
-    return htmlToText(html).slice(0, 16000);
+    const article = source.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i);
+    if (article?.[1]) return htmlToText(article[1]);
+    return htmlToText(source).slice(0, 16000);
 }
 
 function parseDateParts(text) {
@@ -177,75 +188,91 @@ function zonedDateTimeToUtc(parts, timeZone) {
 }
 
 function parseAvailability(text) {
-    const availabilityMatch = String(text).match(/EVENT\s+AVAILABILITY([\s\S]{0,500}?)(?=\b(?:INVITE PARTY AVAILABILITY|PARTY AVAILABILITY|$))/i);
+    const source = String(text || '');
+    const availabilityMatch = source.match(/EVENT\s+AVAILABILITY([\s\S]{0,900}?)(?=\b(?:INVITE PARTY AVAILABILITY|PARTY AVAILABILITY)\b|$)/i);
     if (!availabilityMatch) return null;
     const block = availabilityMatch[1];
-    const dates = block.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+\d{1,2}(?:st|nd|rd|th)?[,]?\s+\d{4}\s*[-–—]\s*(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+\d{1,2}(?:st|nd|rd|th)?[,]?\s+\d{4}/i);
+
+    const datePattern = /\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+\d{1,2}(?:st|nd|rd|th)?[,]?\s+\d{4}\s*[-–—]\s*(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+\d{1,2}(?:st|nd|rd|th)?[,]?\s+\d{4}/i;
+    const dates = block.match(datePattern);
     if (!dates) return null;
     const pieces = dates[0].split(/\s*[-–—]\s*/);
     const startParts = parseDateParts(pieces[0]);
     const endParts = parseDateParts(pieces[1]);
     if (!startParts || !endParts) return null;
 
-    
-    const startAt = zonedDateTimeToUtc({
-    ...startParts,
-    hour: 3,
-    minute: 0,
-    second: 0,
-}, SINGAPORE_TZ);
+    // Read the published clock time and timezone from the announcement.
+    // Never assume a Singapore wall-clock time: Pacific's IANA timezone
+    // automatically applies PST or PDT for the date being converted.
+    const timeMatch = block.match(/\b(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\s*(Pacific(?:\s+Time)?|PT|Eastern(?:\s+Time)?|ET|UTC|GMT)\b/i);
+    if (!timeMatch) return null;
+    let hour = Number(timeMatch[1]) % 12;
+    const minute = Number(timeMatch[2] || 0);
+    if (minute > 59) return null;
+    if (timeMatch[3].toUpperCase() === 'PM') hour += 12;
 
-    const endAt = zonedDateTimeToUtc({
-    ...endParts,
-    hour: 3,
-    minute: 0,
-    second: 0,
-}, SINGAPORE_TZ);
+    const zoneLabel = timeMatch[4].toLowerCase();
+    let timeZone;
+    if (zoneLabel.startsWith('pacific') || zoneLabel === 'pt') timeZone = PACIFIC_TZ;
+    else if (zoneLabel.startsWith('eastern') || zoneLabel === 'et') timeZone = EASTERN_TZ;
+    else if (zoneLabel === 'utc' || zoneLabel === 'gmt') timeZone = 'UTC';
+    else return null;
 
+    const startAt = zonedDateTimeToUtc({ ...startParts, hour, minute, second: 0 }, timeZone);
+    const endAt = zonedDateTimeToUtc({ ...endParts, hour, minute, second: 0 }, timeZone);
     if (endAt <= startAt) return null;
-    return { startAt: startAt.toISOString(), endAt: endAt.toISOString() };
+    return {
+        startAt: startAt.toISOString(),
+        endAt: endAt.toISOString(),
+        sourceTimeZone: timeZone,
+        sourceTimeLabel: timeMatch[0].trim(),
+    };
 }
 
 function extractHuntDetails(thread, text) {
     const normalized = String(text || '').replace(/\s+/g, ' ').trim();
-    // Require several event-specific signals. A normal party/event post should not
-    // activate the tracker merely because it has an availability date range.
     const hasEventAvailability = /\bEVENT\s+AVAILABILITY\b/i.test(normalized);
     const hasProDrop = /\bPro Party of the Day Drop\b/i.test(normalized);
-    const hasHuntBox = /\b(?:Infernal Box|Ornate Autumnal Box|Furniture Box|Hunt Box|Event Box)\b/i.test(normalized);
-    if (!hasEventAvailability || !hasProDrop || !hasHuntBox) return null;
-
     const availability = parseAvailability(normalized);
-    if (!availability) return null;
+    if (!hasEventAvailability || !hasProDrop || !availability) return null;
 
-    let box = null;
-    // In the supplied announcements the hunt box is named immediately after
-    // the Shop Offers marker and before the PPOTD drop section. Avoid matching
-    // the earlier descriptive phrase "Infernal Furniture Box" by mistake.
+    // Hunt names are usually included in the thread title. Remove XenForo's
+    // CURRENT EVENT prefix without hardcoding any particular hunt name.
+    let name = String(thread.title || '').replace(/^\s*CURRENT\s+EVENT\s*[-:|]?\s*/i, '').trim();
+    if (!name || /^current event$/i.test(name)) {
+        const beforeAvailability = normalized.split(/EVENT\s+AVAILABILITY/i)[0].trim();
+        name = beforeAvailability.split(/\s+/).slice(-8).join(' ').trim();
+    }
+
+    // The actual hunt box is commonly the standalone box name nearest the
+    // PPOTD section. This handles new box names without maintaining a list.
     const beforeProDrop = normalized.split(/Pro Party of the Day Drop/i)[0];
-    const boxMatches = [...beforeProDrop.matchAll(/(?:offers\s*!|!|available through)\s*([A-Z][A-Za-z'’ -]{1,55}\bBox)\b/gi)];
-    if (boxMatches.length) box = boxMatches[boxMatches.length - 1][1].trim();
-    if (!box) {
-        const known = normalized.match(/\b(Infernal Box|Ornate Autumnal Box)\b/i);
-        if (known) box = known[1];
+    const boxMatches = [...beforeProDrop.matchAll(/\b([A-Z][A-Za-z0-9'’& -]{1,55}\bBox)\b/g)];
+    let box = boxMatches.length ? boxMatches[boxMatches.length - 1][1].trim() : null;
+    if (box && /Furniture Box$/i.test(box)) {
+        const standalone = [...beforeProDrop.matchAll(/(?:^|\s)([A-Z][A-Za-z0-9'’& -]{1,45}\bBox)\s*(?=$|[.!])/g)];
+        if (standalone.length) box = standalone[standalone.length - 1][1].trim();
     }
 
     let reward = null;
-    const rewardMatch = normalized.match(/Pro Party of the Day Drop\s+(?:Complete your PPOTDs and collect your\s+)?(.{2,100}?)(?:!|\.|\bEvil in Residence\b|\bEquinox Your Socks Off\b|$)/i);
+    const rewardMatch = normalized.match(/Pro Party of the Day Drop[\s\S]{0,180}?collect your\s+(.{2,100}?)(?:[!.]|\s+(?:PIMD Web Store|Only available)|$)/i);
     if (rewardMatch) reward = rewardMatch[1].trim().replace(/\s+/g, ' ');
 
     return {
         id: String(thread.id),
-        name: thread.title,
+        name,
         forumUrl: thread.url,
         startAt: availability.startAt,
         endAt: availability.endAt,
+        sourceTimeZone: availability.sourceTimeZone,
+        sourceTimeLabel: availability.sourceTimeLabel,
         box,
         reward,
         proDropLimit: PRO_DROP_LIMIT,
         source: 'forum',
         manualOverride: false,
         detectedAt: new Date().toISOString(),
+        completeness: { name: Boolean(name), dates: true, box: Boolean(box), reward: Boolean(reward) },
     };
 }
 
@@ -352,6 +379,33 @@ async function sendToBothChannels(payload) {
     }
 }
 
+async function notifyAdminIncompleteHunt(hunt) {
+    const missing = [];
+    if (!hunt.box) missing.push('Hunt box');
+    if (!hunt.reward) missing.push('PPOTD reward');
+    if (!missing.length || !clientRef) return;
+
+    const state = loadState();
+    const notified = Array.isArray(state.incompleteNotifiedIds) ? state.incompleteNotifiedIds : [];
+    if (notified.includes(String(hunt.id))) return;
+
+    try {
+        const channel = await clientRef.channels.fetch(REMINDER_CHANNEL_IDS[0]);
+        if (!channel?.isTextBased?.() || typeof channel.send !== 'function') return;
+        await channel.send({
+            content: `⚠️ **Hunt detected with incomplete details: ${hunt.name}**\n` +
+                `Missing: **${missing.join(', ')}**\n` +
+                `The hunt dates and start time were recognised. Please check the forum post if these details are needed.\n` +
+                `🔗 ${hunt.forumUrl}`, 
+            allowedMentions: { parse: [] },
+        });
+        state.incompleteNotifiedIds = [...notified, String(hunt.id)].slice(-200);
+        saveState(state);
+    } catch (error) {
+        console.warn(`Could not send incomplete hunt alert for ${hunt.name}: ${error.message}`);
+    }
+}
+
 async function announceHuntStart(hunt) {
     const payload = {
         content:
@@ -371,7 +425,7 @@ async function announceHuntStart(hunt) {
 }
 
 async function scanForum() {
-    if (checkInProgress) return;
+    if (checkInProgress) return { ok: false, busy: true, message: 'A hunt scan is already running.' };
     checkInProgress = true;
 
     try {
@@ -380,7 +434,7 @@ async function scanForum() {
 
         if (!threads.length) {
             console.warn('Hunt tracker: forum returned no parseable event threads.');
-            return;
+            return { ok: false, found: 0, message: 'No parseable event threads were returned.' };
         }
 
         const state = loadState();
@@ -394,7 +448,7 @@ async function scanForum() {
         const candidates = [];
         const now = new Date();
 
-        for (const thread of threads.slice(0, 12)) {
+        for (const thread of threads.slice(0, 30)) {
             if (state.seenHuntIds.includes(thread.id)) continue;
             if (state.upcomingHunts.some(item => item.id === thread.id)) continue;
 
@@ -412,6 +466,9 @@ async function scanForum() {
         }
 
         candidates.sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
+        for (const hunt of candidates) await notifyAdminIncompleteHunt(hunt);
+        let activated = null;
+        let queued = 0;
 
         for (const hunt of candidates) {
             // Ignore and record expired historical hunts.
@@ -429,6 +486,7 @@ async function scanForum() {
             if (current?.manualOverride && currentStillActive) {
                 if (!state.upcomingHunts.some(item => item.id === hunt.id)) {
                     state.upcomingHunts.push(hunt);
+                    queued++;
                 }
                 continue;
             }
@@ -438,6 +496,7 @@ async function scanForum() {
                 if (current.id !== hunt.id &&
                     !state.upcomingHunts.some(item => item.id === hunt.id)) {
                     state.upcomingHunts.push(hunt);
+                    queued++;
                 }
                 continue;
             }
@@ -446,6 +505,7 @@ async function scanForum() {
             if (now < new Date(hunt.startAt)) {
                 if (!state.upcomingHunts.some(item => item.id === hunt.id)) {
                     state.upcomingHunts.push(hunt);
+                    queued++;
                 }
                 continue;
             }
@@ -454,6 +514,7 @@ async function scanForum() {
             await announceHuntStart(hunt);
 
             state.activeHunt = hunt;
+            activated = hunt;
             state.lastReminderKey = null;
             state.lastEndAnnouncementKey = null;
             state.seenHuntIds = Array.from(
@@ -470,11 +531,18 @@ async function scanForum() {
         }
 
         saveState(state);
+        return { ok: true, threads: threads.length, detected: candidates.length, queued, activated, candidates };
     } catch (error) {
         console.error('Hunt forum scan failed (will retry):', error.message);
+        return { ok: false, error: error.message };
     } finally {
         checkInProgress = false;
     }
+}
+
+async function refreshHuntMonitor() {
+    lastForumScanAt = Date.now();
+    return scanForum();
 }
 
 async function processSchedule() {
@@ -609,17 +677,17 @@ function setManualHunt({ name, startDate, endDate, box = null, reward = null, fo
 
 const startAt = zonedDateTimeToUtc({
     ...startParts,
-    hour: 15,
+    hour: 12,
     minute: 0,
     second: 0,
-}, EASTERN_TZ);
+}, PACIFIC_TZ);
 
 const endAt = zonedDateTimeToUtc({
     ...endParts,
-    hour: 15,
+    hour: 12,
     minute: 0,
     second: 0,
-}, EASTERN_TZ);
+}, PACIFIC_TZ);
 
     const state = loadState();
     const current = state.activeHunt;
@@ -755,6 +823,10 @@ module.exports = {
     getActiveHunt,
     getHuntProgress,
     scanForum,
+    refreshHuntMonitor,
+    parseAvailability,
+    extractHuntDetails,
+    extractFirstPost,
     processSchedule,
     formatEastern,
     formatSingapore,
