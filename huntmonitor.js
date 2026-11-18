@@ -407,21 +407,12 @@ async function notifyAdminIncompleteHunt(hunt) {
 }
 
 async function announceHuntStart(hunt) {
-    const payload = {
-        content:
-            `🖤 **NEW PIMD HUNT DETECTED: ${hunt.name}**\n` +
-            `📅🇸🇬 **Starts (Singapore):** ${formatSingapore(new Date(hunt.startAt))}\n` +
-            `📅🇺🇸 **Starts (Los Angeles):** ${formatLosAngeles(new Date(hunt.startAt))}\n` +
-            `🏁🇸🇬 **Ends (Singapore):** ${formatSingapore(new Date(hunt.endAt))}\n` +
-            `🏁🇺🇸 **Ends (Los Angeles):** ${formatLosAngeles(new Date(hunt.endAt))}\n` +
-            `🎯 **Daily target per member:** ${DAILY_TARGET.toLocaleString('en-US')} drops\n` +
-            `📊 **Final cumulative target:** ${Math.max(1, daysBetweenDateKeys(singaporeDateKey(new Date(hunt.startAt)), singaporeDateKey(new Date(hunt.endAt))) + 1) * DAILY_TARGET} drops per member\n` +
-            (hunt.box ? `📦 **Hunt box:** ${hunt.box}\n` : '') +
-            (hunt.reward ? `💎 **PPOTD Pro-drop reward:** ${hunt.reward}\n` : '') +
-            `🔗 [Official forum announcement](${hunt.forumUrl})`,
-        allowedMentions: { parse: [] },
-    };
-    await sendToBothChannels(payload);
+    // One message serves as both the new-hunt announcement and Day 1 tracker.
+    // The caller records today's reminder key so processSchedule does not send
+    // a second copy moments later.
+    const now = new Date();
+    const day = Math.max(1, getHuntDay(hunt, now));
+    await sendToBothChannels(buildReminder(hunt, day, now));
 }
 
 async function scanForum() {
@@ -515,7 +506,7 @@ async function scanForum() {
 
             state.activeHunt = hunt;
             activated = hunt;
-            state.lastReminderKey = null;
+            state.lastReminderKey = singaporeDateKey(new Date());
             state.lastEndAnnouncementKey = null;
             state.seenHuntIds = Array.from(
                 new Set([...state.seenHuntIds, hunt.id])
@@ -626,7 +617,7 @@ async function processSchedule() {
     state.upcomingHunts = state.upcomingHunts.filter(
         item => item.id !== nextHunt.id
     );
-    state.lastReminderKey = null;
+    state.lastReminderKey = singaporeDateKey(new Date());
     state.lastEndAnnouncementKey = null;
     state.seenHuntIds = Array.from(
         new Set([...state.seenHuntIds, nextHunt.id])
