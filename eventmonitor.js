@@ -76,9 +76,19 @@ function decodeHtml(value) {
 }
 
 function stripTags(value) {
-    return decodeHtml(String(value || '')
+    // XenForo posts may include lightbox/slideshow initialisation scripts and
+    // JSON-like metadata. Decode entities first so encoded lightbox JSON is
+    // removed too, then keep only human-readable post text.
+    return decodeHtml(String(value || ''))
+        .replace(/<!--[\s\S]*?-->/g, ' ')
+        .replace(/<(script|style|template|noscript)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
+        .replace(/\{[^{}]{0,2500}"lightbox_(?:close|next|previous|error|start_slideshow|stop_slideshow|full_screen|thumbnails|download|share|zoom|new_window|toggle_sidebar)"[\s\S]*?\}/gi, ' ')
         .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<[^>]+>/g, ' '))
+        .replace(/<\/(?:p|div|li|h[1-6])\s*>/gi, '\n')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/[ \t]+/g, ' ')
+        .replace(/\s*\n\s*/g, '\n')
+        .replace(/\n{2,}/g, '\n')
         .replace(/\s+/g, ' ')
         .trim();
 }
