@@ -34,7 +34,7 @@ const {
     handlePublicModal
 } = require('./publichub');
 const { startTimers } = require('./timers');
-const { startEventMonitor } = require('./eventmonitor');
+const { startEventMonitor, refreshEvents } = require('./eventmonitor');
 const {
     startHuntMonitor,
     refreshHuntMonitor,
@@ -269,6 +269,15 @@ const commands = [
             .setDescription('Optional total tutor value, e.g. 120b')
             .setRequired(false)
     ),
+
+    new SlashCommandBuilder()
+        .setName('events')
+        .setDescription('PIMD forum event tools')
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('refresh')
+                .setDescription('Recheck the latest four PIMD events and restore missing Discord posts (Admin only)')
+        ),
 
     new SlashCommandBuilder()
         .setName('hunt')
@@ -1136,6 +1145,29 @@ if (subcommand === 'set' || subcommand === 'proset') {
                 )
                 .setFooter({ text: 'TUFCBOT • PIMD POTD Monitor' })]
         });
+    }
+
+    // =========================
+    // /events refresh
+    // =========================
+    if (interaction.commandName === 'events' && interaction.options.getSubcommand() === 'refresh') {
+        if (!(await isManagementAuthorized(interaction))) {
+            return await interaction.reply({
+                content: '❌ You need one of the TUFC management roles to refresh forum events.',
+                flags: 64
+            });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+        const result = await refreshEvents({ limit: 4 });
+        if (!result?.ok) {
+            return await interaction.editReply(`❌ Event refresh failed: ${result?.message || 'The PIMD forum could not be read.'}`);
+        }
+        return await interaction.editReply(
+            `🔄 **PIMD event refresh completed.**\n` +
+            `${result.message}\n\n` +
+            (result.titles || []).map(title => `• ${title}`).join('\n')
+        );
     }
 
     // =========================
