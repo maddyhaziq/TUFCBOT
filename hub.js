@@ -29,6 +29,7 @@ const {
 } = require('./googlesheets');
 const { PARTY_INFO, parseDuration, formatDuration, listTimers, createTimer } = require('./timers');
 const { solveDormUpgrade } = require('./dorm_calculator');
+const party = require('./partyannounce');
 
 const MANAGEMENT_CHANNEL_ID = '1546018842357010452';
 const MANAGEMENT_THREAD_ID = '1362653602006696056';
@@ -494,6 +495,7 @@ function buildHubRows() {
 
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('tufc_hub_lbh').setLabel('LBH Call').setEmoji('📣').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('tufc_hub_party').setLabel('Party Announcements').setEmoji('🎉').setStyle(ButtonStyle.Danger),
         new ButtonBuilder().setCustomId('tufc_hub_potd').setLabel('POTD Lookup').setEmoji('🎯').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('tufc_hub_announcement').setLabel('Announcement').setEmoji('📢').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId('tufc_hub_admin').setLabel('Admin').setEmoji('🛠️').setStyle(ButtonStyle.Danger),
@@ -668,6 +670,9 @@ async function handleHubButton(interaction, client) {
     if (!interaction.isButton()) return false;
     const id = interaction.customId;
     if (!id.startsWith('tufc_')) return false;
+    if (id === 'tufc_hub_party' || id.startsWith('tufc_party_')) {
+        return party.handlePartyButton(interaction, isManagementAuthorized);
+    }
     if (id === 'tufc_hub_member') { await showMemberMenu(interaction); return true; }  
     if (id === 'tufc_hub_hunt_reminder') {
     const {
@@ -1317,6 +1322,7 @@ async function handleHubModal(interaction, client) {
     if (!interaction.isModalSubmit()) return false;
     const id = interaction.customId;
     if (!id.startsWith('tufc_modal_')) return false;
+    if (id.startsWith('tufc_modal_party_')) return party.handlePartyModal(interaction, isManagementAuthorized);
 
     if (id === 'tufc_modal_member_lookup') {
         await interaction.deferReply({ flags: 64 });
