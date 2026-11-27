@@ -75,7 +75,7 @@ function logAudit(entry) {
 function menuPayload() {
     return {
         embeds: [new EmbedBuilder()
-            .setTitle('🎉 EC Parties / LBH — Party Announcement Control')
+            .setTitle('🎉 EC Parties LBH — Announcement Control')
             .setDescription('Pick a party, then press each stage button when it is time to announce it. Nothing is posted automatically.')],
         components: [new ActionRowBuilder().addComponents(
             ...PARTY_KEYS.map(key => new ButtonBuilder()
