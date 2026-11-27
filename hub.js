@@ -352,18 +352,18 @@ async function showTimerMenu(interaction) {
 }
 
 async function showLBHMenu(interaction) {
-    return interaction.reply({ flags: 64, embeds: [new EmbedBuilder().setTitle('📣 LBH Call').setDescription('Choose the bar level to call @LBH hitters.')], components: [
+    return interaction.reply({ flags: 64, embeds: [new EmbedBuilder().setTitle('📣 Regular Parties LBH').setDescription('Choose the bar level to call @LBH hitters.')], components: [
         new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('tufc_lbh_2').setLabel('@LBH 2.0 Bar').setEmoji('📣').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('tufc_lbh_15').setLabel('@LBH 1.5 Bar').setEmoji('📣').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('tufc_lbh_1').setLabel('@LBH 1.0 Bar').setEmoji('📣').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('tufc_lbh_05').setLabel('@LBH 0.5 Bar').setEmoji('📣').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('tufc_lbh_2').setLabel('2.0').setEmoji('📣').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('tufc_lbh_15').setLabel('1.5').setEmoji('📣').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('tufc_lbh_1').setLabel('1.0').setEmoji('📣').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('tufc_lbh_05').setLabel('0.5').setEmoji('📣').setStyle(ButtonStyle.Primary),
             new ButtonBuilder().setCustomId('tufc_lbh_pro_test_initiated').setLabel('Pro Test Initiated').setEmoji('🧪').setStyle(ButtonStyle.Primary),
         ),
         new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('tufc_lbh_pro_test_lbh').setLabel('Pro Test LBH').setEmoji('🧪').setStyle(ButtonStyle.Danger),
-            new ButtonBuilder().setCustomId('tufc_lbh_ppotd').setLabel('@LBH PPOTD').setEmoji('🔔').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('tufc_lbh_potd').setLabel('@LBH POTD').setEmoji('🔔').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('tufc_lbh_ppotd').setLabel('LBH PPOTD Start').setEmoji('🔔').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('tufc_lbh_potd').setLabel('LBH POTD Start').setEmoji('🔔').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('tufc_lbh_done').setLabel('Party Finished').setEmoji('✅').setStyle(ButtonStyle.Success),
         )
     ]});
@@ -494,8 +494,8 @@ function buildHubRows() {
     );
 
     const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('tufc_hub_lbh').setLabel('LBH Call').setEmoji('📣').setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId('tufc_hub_party').setLabel('Party Announcements').setEmoji('🎉').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('tufc_hub_lbh').setLabel('Regular Parties LBH').setEmoji('📣').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('tufc_hub_party').setLabel('EC Parties LBH').setEmoji('🎉').setStyle(ButtonStyle.Danger),
         new ButtonBuilder().setCustomId('tufc_hub_potd').setLabel('POTD Lookup').setEmoji('🎯').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId('tufc_hub_announcement').setLabel('Announcement').setEmoji('📢').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId('tufc_hub_admin').setLabel('Admin').setEmoji('🛠️').setStyle(ButtonStyle.Danger),
@@ -651,16 +651,16 @@ async function showTimerMenu(interaction) {
 }
 
 async function showLBHMenu(interaction) {
-    return interaction.reply({ flags: 64, embeds: [new EmbedBuilder().setTitle('📣 LBH Call').setDescription('Choose the bar level to call @LBH hitters.')], components: [
+    return interaction.reply({ flags: 64, embeds: [new EmbedBuilder().setTitle('📣 Regular Parties LBH').setDescription('Choose the bar level to call @LBH hitters.')], components: [
         new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('tufc_lbh_2').setLabel('@LBH 2.0 Bar').setEmoji('📣').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('tufc_lbh_15').setLabel('@LBH 1.5 Bar').setEmoji('📣').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('tufc_lbh_1').setLabel('@LBH 1.0 Bar').setEmoji('📣').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('tufc_lbh_05').setLabel('@LBH 0.5 Bar').setEmoji('📣').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('tufc_lbh_2').setLabel('2.0').setEmoji('📣').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('tufc_lbh_15').setLabel('1.5').setEmoji('📣').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('tufc_lbh_1').setLabel('1.0').setEmoji('📣').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('tufc_lbh_05').setLabel('0.5').setEmoji('📣').setStyle(ButtonStyle.Primary),
         ),
         new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('tufc_lbh_ppotd').setLabel('@LBH PPOTD').setEmoji('🔔').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('tufc_lbh_potd').setLabel('@LBH POTD').setEmoji('🔔').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('tufc_lbh_ppotd').setLabel('LBH PPOTD Start').setEmoji('🔔').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('tufc_lbh_potd').setLabel('LBH POTD Start').setEmoji('🔔').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('tufc_lbh_done').setLabel('Party Finished').setEmoji('✅').setStyle(ButtonStyle.Success),
         )
     ]});
@@ -880,6 +880,12 @@ async function handleHubButton(interaction, client) {
     }
 
     const lbhLabels = { tufc_lbh_2: '2.0 Bar', tufc_lbh_15: '1.5 Bar', tufc_lbh_1: '1.0 Bar', tufc_lbh_05: '0.5 Bar', tufc_lbh_pro_test_initiated: 'Pro Test Initiated', tufc_lbh_pro_test_lbh: 'Pro Test LBH', tufc_lbh_ppotd: 'PPOTD', tufc_lbh_potd: 'POTD', tufc_lbh_done: 'Party is finished' };
+    const lbhBarLines = {
+        tufc_lbh_2: '**2.0 Bar!** The party is heating up. Start getting ready to hit.',
+        tufc_lbh_15: '**1.5 Bar!** Getting closer. Hitters, get into position.',
+        tufc_lbh_1: '**1.0 Bar!** Almost there. Hitters, fingers on the button.',
+        tufc_lbh_05: '**0.5 Bar — final call!** The last bar is almost here. Hit it now!',
+    };
     if (lbhLabels[id]) {
         const role = interaction.guild?.roles.cache.get(process.env.LBH_ROLE_ID) || interaction.guild?.roles.cache.find(r => r.name.toLowerCase() === 'lbh');
         if (!role) { await interaction.reply({ flags: 64, content: '❌ I could not find the **LBH** role. Set `LBH_ROLE_ID` in your .env or name the role exactly `LBH`.' }); return true; }
@@ -887,9 +893,11 @@ async function handleHubButton(interaction, client) {
         if (id === 'tufc_lbh_done') {
             message = `✅ ${role} — **Party is finished!**`;
         } else if (id === 'tufc_lbh_ppotd') {
-            message = `${role} **PPOTD is up.** Reminder to hit the party.`;
+            message = `🔔 ${role} — **PPOTD has started!** Hitters, the pro party is open. Go hit it!`;
         } else if (id === 'tufc_lbh_potd') {
-            message = `${role} **POTD is up.** Reminder to hit the party.`;
+            message = `🔔 ${role} — **POTD has started!** Hitters, today's party is open. Go hit it!`;
+        } else if (lbhBarLines[id]) {
+            message = `📣 ${role} — ${lbhBarLines[id]}`;
         } else {
             message = `📣 ${role} — **LBH call: ${lbhLabels[id]}!** Hitters, please get ready.`;
         }
