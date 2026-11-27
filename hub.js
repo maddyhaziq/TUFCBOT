@@ -351,24 +351,6 @@ async function showTimerMenu(interaction) {
     ]});
 }
 
-async function showLBHMenu(interaction) {
-    return interaction.reply({ flags: 64, embeds: [new EmbedBuilder().setTitle('📣 Regular Parties LBH').setDescription('Choose the bar level to call @LBH hitters.')], components: [
-        new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('tufc_lbh_2').setLabel('2.0').setEmoji('📣').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('tufc_lbh_15').setLabel('1.5').setEmoji('📣').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('tufc_lbh_1').setLabel('1.0').setEmoji('📣').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('tufc_lbh_05').setLabel('0.5').setEmoji('📣').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('tufc_lbh_pro_test_initiated').setLabel('Pro Test Initiated').setEmoji('🧪').setStyle(ButtonStyle.Primary),
-        ),
-        new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('tufc_lbh_pro_test_lbh').setLabel('Pro Test LBH').setEmoji('🧪').setStyle(ButtonStyle.Danger),
-            new ButtonBuilder().setCustomId('tufc_lbh_ppotd').setLabel('LBH PPOTD Start').setEmoji('🔔').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('tufc_lbh_potd').setLabel('LBH POTD Start').setEmoji('🔔').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('tufc_lbh_done').setLabel('Party Finished').setEmoji('✅').setStyle(ButtonStyle.Success),
-        )
-    ]});
-}
-
 async function getHubStats() {
     const rows = await getMembers();
     const members = findMemberRows(rows);
@@ -503,6 +485,7 @@ function buildHubRows() {
 
     const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('tufc_hub_hunt_reminder').setLabel('Hunt Reminder').setEmoji('🐺').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('tufc_hub_protest').setLabel('Pro Testing').setEmoji('🧪').setStyle(ButtonStyle.Danger),
         new ButtonBuilder().setCustomId('tufc_hub_dorm_upgrade').setLabel('New Dorm Tower Upgrade Calculator').setEmoji('🏢').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('tufc_hub_link_discord').setLabel('Link Discord').setEmoji('🔗').setStyle(ButtonStyle.Secondary),
     );
@@ -650,27 +633,11 @@ async function showTimerMenu(interaction) {
     ]});
 }
 
-async function showLBHMenu(interaction) {
-    return interaction.reply({ flags: 64, embeds: [new EmbedBuilder().setTitle('📣 Regular Parties LBH').setDescription('Choose the bar level to call @LBH hitters.')], components: [
-        new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('tufc_lbh_2').setLabel('2.0').setEmoji('📣').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('tufc_lbh_15').setLabel('1.5').setEmoji('📣').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('tufc_lbh_1').setLabel('1.0').setEmoji('📣').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('tufc_lbh_05').setLabel('0.5').setEmoji('📣').setStyle(ButtonStyle.Primary),
-        ),
-        new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('tufc_lbh_ppotd').setLabel('LBH PPOTD Start').setEmoji('🔔').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('tufc_lbh_potd').setLabel('LBH POTD Start').setEmoji('🔔').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('tufc_lbh_done').setLabel('Party Finished').setEmoji('✅').setStyle(ButtonStyle.Success),
-        )
-    ]});
-}
-
 async function handleHubButton(interaction, client) {
     if (!interaction.isButton()) return false;
     const id = interaction.customId;
     if (!id.startsWith('tufc_')) return false;
-    if (id === 'tufc_hub_party' || id.startsWith('tufc_party_')) {
+    if (id === 'tufc_hub_party' || id.startsWith('tufc_party_') || id === 'tufc_hub_lbh' || id.startsWith('tufc_lbh_') || id === 'tufc_hub_protest' || id.startsWith('tufc_pt_')) {
         return party.handlePartyButton(interaction, isManagementAuthorized);
     }
     if (id === 'tufc_hub_member') { await showMemberMenu(interaction); return true; }  
@@ -761,7 +728,6 @@ async function handleHubButton(interaction, client) {
     }
     if (id === 'tufc_hub_goldpass') { await showGoldPassMenu(interaction); return true; }
     if (id === 'tufc_hub_timers') { await showTimerMenu(interaction); return true; }
-    if (id === 'tufc_hub_lbh') { await showLBHMenu(interaction); return true; }
 
     if (id === 'tufc_hub_potd') {
         await interaction.deferReply({ flags: 64 });
@@ -877,40 +843,6 @@ async function handleHubButton(interaction, client) {
             const text = active.map(t => `${t.emoji} **${t.partyName}** — **${t.ign}** — <t:${Math.floor(t.endAt / 1000)}:R> (ends <t:${Math.floor(t.endAt / 1000)}:T>)`).join('\n');
             await interaction.reply({ flags: 64, embeds: [new EmbedBuilder().setTitle('⏳ Active EC Timers').setDescription(text)] }); return true;
         }
-    }
-
-    const lbhLabels = { tufc_lbh_2: '2.0 Bar', tufc_lbh_15: '1.5 Bar', tufc_lbh_1: '1.0 Bar', tufc_lbh_05: '0.5 Bar', tufc_lbh_pro_test_initiated: 'Pro Test Initiated', tufc_lbh_pro_test_lbh: 'Pro Test LBH', tufc_lbh_ppotd: 'PPOTD', tufc_lbh_potd: 'POTD', tufc_lbh_done: 'Party is finished' };
-    const lbhBarLines = {
-        tufc_lbh_2: '**2.0 Bar!** The party is heating up. Start getting ready to hit.',
-        tufc_lbh_15: '**1.5 Bar!** Getting closer. Hitters, get into position.',
-        tufc_lbh_1: '**1.0 Bar!** Almost there. Hitters, fingers on the button.',
-        tufc_lbh_05: '**0.5 Bar — final call!** The last bar is almost here. Hit it now!',
-    };
-    if (lbhLabels[id]) {
-        const role = interaction.guild?.roles.cache.get(process.env.LBH_ROLE_ID) || interaction.guild?.roles.cache.find(r => r.name.toLowerCase() === 'lbh');
-        if (!role) { await interaction.reply({ flags: 64, content: '❌ I could not find the **LBH** role. Set `LBH_ROLE_ID` in your .env or name the role exactly `LBH`.' }); return true; }
-        let message;
-        if (id === 'tufc_lbh_done') {
-            message = `✅ ${role} — **Party is finished!**`;
-        } else if (id === 'tufc_lbh_ppotd') {
-            message = `🔔 ${role} — **PPOTD has started!** Hitters, the pro party is open. Go hit it!`;
-        } else if (id === 'tufc_lbh_potd') {
-            message = `🔔 ${role} — **POTD has started!** Hitters, today's party is open. Go hit it!`;
-        } else if (lbhBarLines[id]) {
-            message = `📣 ${role} — ${lbhBarLines[id]}`;
-        } else {
-            message = `📣 ${role} — **LBH call: ${lbhLabels[id]}!** Hitters, please get ready.`;
-        }
-
-        const targetChannelId = process.env.LBH_CHANNEL_ID || '1433477225251995740';
-        const targetChannel = await interaction.guild.channels.fetch(targetChannelId).catch(() => null);
-        if (!targetChannel || typeof targetChannel.send !== 'function') {
-            await interaction.reply({ flags: 64, content: `❌ I could not access the LBH destination channel/thread (${targetChannelId}). Check the channel ID and bot permissions.` });
-            return true;
-        }
-        await targetChannel.send({ content: message, allowedMentions: { roles: [role.id] } });
-        await interaction.reply({ flags: 64, content: `✅ LBH call posted in <#${targetChannelId}>.` });
-        return true;
     }
 
     if (id === 'tufc_admin_discord_role_select') {
